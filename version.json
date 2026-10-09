@@ -1,5 +1,5 @@
 {
-  "version": "1.0.1",
-  "url": "https://github.com/PD-1004/workbuddy-session-migration-assistant/releases/tag/v1.0.1",
-  "notes": "更新按钮背景调整为 #4a7c3a 并缩小尺寸；仅在确认有新版时显示入口，无新版或检查失败时隐藏。"
+  "version": "1.0.2",
+  "url": "https://github.com/PD-1004/workbuddy-session-migration-assistant/releases/tag/v1.0.2",
+  "notes": "修复迁移包检查误报 no such table: sessions：数据库缺失时不再创建空库，明确提示空库和缺少会话表，并避免将检查快照、备份或项目产物数据库作为迁移源。迁移包不完整时请重新传输整个文件夹。"
 }
