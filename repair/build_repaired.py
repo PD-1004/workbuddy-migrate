@@ -214,6 +214,8 @@ def main():
             (BUILD / "wb_web.bin").write_bytes(raw)
         elif entry["name"] == "wb_ui.html":
             html = unpack(entry).decode("utf-8")
+            html = html.replace('flex:1;overflow:auto;padding:10px 16px 14px;', 'flex:1;min-height:0;contain:size;overflow:auto;padding:10px 16px 14px;', 1)
+            html = html.replace('.logwrap{min-width:auto;min-height:180px}', '.logwrap{flex:none;min-width:auto;min-height:180px;height:300px}', 1)
             html = html.replace("只补缺不覆盖", "补缺与更新")
             html = html.replace("只补本机缺少的会话，已有的不覆盖", "补入缺少的会话；源机较新的已有会话会更新")
             html = html.replace("会话会登记到这个账号下", "新增会话登记到这个账号下，已有会话保留原账号")

@@ -327,6 +327,7 @@ def find_browser(candidates):
 
 
 def install_web(web):
+    web["diag"] = lambda msg: None
     web["_DEFAULT_BROWSER_PROC"] = default_browser_process
     web["find_browser"] = lambda: find_browser(web["EDGE_CANDIDATES"])
     from wb_skills import install_web as install_skills

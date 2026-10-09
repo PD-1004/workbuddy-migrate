@@ -399,6 +399,32 @@ class MigrationTests(unittest.TestCase):
 
 
 class BrowserTests(unittest.TestCase):
+    def logging_web(self, directory):
+        functions = self.web_functions()
+        ns = {"__builtins__": __builtins__, "os": os, "time": __import__("time"),
+              "tempfile": tempfile, "_script_dir": lambda: directory, "_LOG_PATH": None}
+        for name in ("_log_path", "diag"):
+            ns[name] = types.FunctionType(functions[name], ns)
+        if not ORIGINAL:
+            from wb_fixes import install_web
+            ns["Handler"] = type("Handler", (), {"_do_post": lambda self: None})
+            install_web(ns)
+        return ns
+
+    def test_diagnostics_do_not_create_log_file(self):
+        with tempfile.TemporaryDirectory(dir=str(ROOT / "repair")) as directory:
+            web = self.logging_web(directory)
+            web["diag"]("startup")
+            web["diag"]("migration finished")
+            self.assertFalse((pathlib.Path(directory) / "wbmig-log.txt").exists())
+
+    def test_diagnostics_leave_existing_log_file_untouched(self):
+        with tempfile.TemporaryDirectory(dir=str(ROOT / "repair")) as directory:
+            path = pathlib.Path(directory) / "wbmig-log.txt"
+            path.write_bytes(b"previous log")
+            self.logging_web(directory)["diag"]("startup")
+            self.assertEqual(path.read_bytes(), b"previous log")
+
     def web_functions(self):
         if ORIGINAL:
             code = marshal.loads((ROOT / "audit" / "wb_web.bin").read_bytes())
