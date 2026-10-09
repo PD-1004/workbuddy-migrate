@@ -208,7 +208,7 @@ def main():
             html = html.replace("会话会登记到这个账号下", "新增会话登记到这个账号下，已有会话保留原账号")
             html = html.replace("先自动备份本机数据库", "先备份本机数据库和将替换的文件")
             html = html.replace("补登记会话、搬产物本体、改写路径、补装技能。补缺与更新，执行前自动备份。", "补登记会话、更新源机较新的已有会话、搬产物本体、改写路径、补装技能。替换前自动备份。")
-            html = html.replace('<div class="wxwrap" id="wxwrap">', '<div class="header-actions"><button class="update-button" id="update-button" onclick="checkUpdate(true)">更新</button><div class="wxwrap" id="wxwrap">', 1)
+            html = html.replace('<div class="wxwrap" id="wxwrap">', '<div class="header-actions"><button class="update-button" id="update-button" hidden onclick="checkUpdate(true)">更新</button><div class="wxwrap" id="wxwrap">', 1)
             html = html.replace('</header>', '</div></header>', 1)
             html = html.replace('</body>', (HERE / "update_ui.html").read_text(encoding="utf-8") + '\n</body>', 1)
             raw = html.encode("utf-8")

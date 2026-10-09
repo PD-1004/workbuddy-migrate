@@ -3,7 +3,7 @@ import json
 import re
 import urllib.request
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 RELEASE_BASE = "__RELEASE_BASE__"
 UPDATE_FEED = "__UPDATE_FEED__"
 
