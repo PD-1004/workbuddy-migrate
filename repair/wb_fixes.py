@@ -1,5 +1,6 @@
-"""Small runtime helpers for the three confirmed migration defects."""
+"""Runtime helpers for the confirmed migration defects."""
 import os
+import pathlib
 import shutil
 import sqlite3
 import threading
@@ -49,6 +50,47 @@ def install_core(core):
     state = threading.local()
     original_apply = core["apply_migrate"]
     original_copy_tree = core["_copy_tree"]
+    original_snapshot = core["_snapshot_db"]
+
+    def pkg_cache_dir(pkg):
+        cache_names = (core["PKG_CACHE"], "cache", "缓存目录")
+        for name in cache_names:
+            cache = os.path.join(pkg, name)
+            if os.path.isfile(os.path.join(cache, "workbuddy.db")):
+                return cache
+        if any(os.path.isdir(os.path.join(pkg, name)) for name in cache_names):
+            return ""
+        for folder, dirs, names in os.walk(pkg):
+            # Snapshots, backups and workspace artifacts are not cache inputs.
+            dirs[:] = [name for name in dirs if name not in ("_tmp_db", core["PKG_WS"], "workspace", "工作空间", "skills") and not name.startswith("_backup_")]
+            if folder != pkg and "workbuddy.db" in names:
+                return folder
+        return ""
+
+    def snapshot_db(src_db, tmp_dir):
+        if not os.path.isfile(src_db):
+            return None
+        return original_snapshot(src_db, tmp_dir)
+
+    def read_sessions(db_path):
+        path = pathlib.Path(db_path).absolute()
+        uri = path.as_uri()
+        if path.drive.startswith("\\\\"):
+            uri = uri.replace("file://", "file:////", 1)
+        conn = sqlite3.connect(uri + "?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        try:
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if not tables:
+                raise ValueError("数据库为空，请从源机重新传输完整迁移包（包括缓存目录/workbuddy.db）。")
+            if "sessions" not in tables:
+                raise ValueError("数据库缺少 sessions 会话表，迁移包可能不完整或数据库格式不兼容。请确认源机缓存路径并重新打包。")
+            rows = [dict(row) for row in conn.execute("SELECT * FROM sessions")]
+            cols = [row[1] for row in conn.execute("PRAGMA table_info(sessions)")]
+            ws = [dict(row) for row in conn.execute("SELECT * FROM workspaces")] if "workspaces" in tables else []
+            return rows, cols, ws
+        finally:
+            conn.close()
 
     def strict_log(log):
         def emit(message):
@@ -240,6 +282,9 @@ def install_core(core):
             state.backup_ready = True
 
     core.update({
+        "pkg_cache_dir": pkg_cache_dir,
+        "_snapshot_db": snapshot_db,
+        "_read_sessions": read_sessions,
         "_same_content": same_content,
         "_retained_ids": retained_ids,
         "_upsert_sql": upsert_sql,

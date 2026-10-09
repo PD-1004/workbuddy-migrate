@@ -10,6 +10,7 @@ import tempfile
 import threading
 import types
 import unittest
+from unittest import mock
 import urllib.request
 import zlib
 
@@ -130,6 +131,73 @@ class MigrationTests(unittest.TestCase):
     def test_first_full_import_still_imports_all_sessions(self):
         self.initial("all")
         self.assertTrue((self.dw / "project-b" / "result.txt").exists())
+
+    def test_missing_package_database_is_reported_without_creating_empty_database(self):
+        pkg = self.pack()
+        db = pathlib.Path(pkg) / "缓存目录" / "workbuddy.db"
+        db.unlink()
+        result = self.core["check_migrate"](pkg, self.env)
+        self.assertFalse(result["ok"], result)
+        self.assertIn("没有 workbuddy.db", result["text"])
+        self.assertFalse(db.exists(), "checking must not create a missing source database")
+
+    def test_missing_package_database_cannot_use_previous_check_snapshot(self):
+        pkg = self.pack()
+        self.assertTrue(self.core["check_migrate"](pkg, self.env)["ok"])
+        (pathlib.Path(pkg) / "缓存目录" / "workbuddy.db").unlink()
+        result = self.core["check_migrate"](pkg, self.env)
+        self.assertFalse(result["ok"], result)
+        self.assertIn("没有 workbuddy.db", result["text"])
+
+    def test_empty_package_database_explains_incomplete_transfer(self):
+        pkg = self.pack()
+        (pathlib.Path(pkg) / "缓存目录" / "workbuddy.db").write_bytes(b"")
+        result = self.core["check_migrate"](pkg, self.env)
+        self.assertFalse(result["ok"], result)
+        self.assertIn("空", result["text"])
+
+    def test_package_database_without_sessions_explains_invalid_schema(self):
+        pkg = self.pack()
+        db = pathlib.Path(pkg) / "缓存目录" / "workbuddy.db"
+        db.unlink()
+        with connect(db) as conn:
+            conn.execute("CREATE TABLE unrelated (id INTEGER)")
+        result = self.core["check_migrate"](pkg, self.env)
+        self.assertFalse(result["ok"], result)
+        self.assertIn("缺少 sessions 会话表", result["text"])
+
+    def test_missing_snapshot_source_is_not_created(self):
+        missing = self.root / "missing.db"
+        self.assertIsNone(self.core["_snapshot_db"](str(missing), str(self.root / "snapshot")))
+        self.assertFalse(missing.exists())
+
+    def test_empty_standard_cache_does_not_hide_legacy_cache_database(self):
+        pkg = pathlib.Path(self.pack())
+        cache = pkg / "缓存目录"
+        cache.rename(pkg / "cache")
+        cache.mkdir()
+        result = self.core["check_migrate"](str(pkg), self.env)
+        self.assertTrue(result["ok"], result)
+
+    def test_readonly_database_uri_preserves_network_share_paths(self):
+        original_connect = sqlite3.connect
+        def open_share(database, **kwargs):
+            self.assertTrue(database.startswith("file:////fileserver/share/"), database)
+            self.assertTrue(kwargs.get("uri"))
+            return original_connect(str(self.sc / "workbuddy.db"))
+        with mock.patch.object(sqlite3, "connect", side_effect=open_share):
+            rows, _, _ = self.core["_read_sessions"](r"\\fileserver\share\workbuddy.db")
+        self.assertEqual(len(rows), 2)
+
+    def test_missing_package_database_cannot_use_workspace_artifact_database(self):
+        pkg = pathlib.Path(self.pack())
+        db = pkg / "缓存目录" / "workbuddy.db"
+        artifact = pkg / "工作空间" / "project-a" / "workbuddy.db"
+        artifact.write_bytes((self.sc / "workbuddy.db").read_bytes())
+        db.unlink()
+        result = self.core["check_migrate"](str(pkg), self.env)
+        self.assertFalse(result["ok"], result)
+        self.assertIn("没有 workbuddy.db", result["text"])
 
     def test_selected_import_updates_newer_session_and_outputs_with_backup(self):
         self._assert_newer_update("selected")
