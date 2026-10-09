@@ -1,0 +1,125 @@
+<style>
+#v-src .panel,#v-dst .panel,#v-src .pcol>.card:last-child,#v-dst .pcol>.card:last-child{min-height:min-content}
+.skills-box{margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+.skills-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.skills-box select,.skills-box input[type=search]{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--r-sm);padding:6px 8px;max-width:100%}
+.skills-box input[type=search]{flex:1;min-width:100px}
+.skills-list{max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}
+.skill-item{display:flex;gap:10px;align-items:center;padding:9px 10px;border-bottom:1px solid var(--border)}
+.skill-item:last-child{border-bottom:0}
+.skill-item input{accent-color:var(--success);flex:none}
+.skill-text{flex:1;min-width:0;overflow-wrap:anywhere}
+.skill-text small{display:block;color:var(--muted);font-size:12px;line-height:1.4;margin-top:2px}
+.skill-size{font-size:12px;color:var(--muted);white-space:nowrap}
+.skills-summary{font-size:12px;color:var(--fg-soft);margin:8px 0}
+.skills-box [hidden]{display:none!important}
+</style>
+<script id="skills-script">
+var SK={mode:PK.mode==="all"?"all":"none",touched:false,cache:null,items:[],picked:{},ready:false,error:"",q:"",actions:{},dstScope:"",dstItems:[]};
+$("skills-src").innerHTML='<div class="skills-box"><div class="skills-toolbar"><b>携带技能</b>'+
+  '<select id="skill-mode" onchange="skillModeChanged(this.value)" aria-label="技能打包方式">'+
+  '<option value="none">不携带技能</option><option value="all">携带全部技能</option><option value="custom">自定义技能</option></select></div>'+
+  '<div id="skill-options" hidden><div class="skills-toolbar">'+
+  '<input type="search" id="skill-search" placeholder="搜索技能名称或简介" aria-label="搜索技能" oninput="SK.q=this.value;renderSourceSkills()">'+
+  '<button class="btn btn-ghost sm" id="skill-all" onclick="skillSetAll(true)">全选</button>'+
+  '<button class="btn btn-ghost sm" id="skill-clear" onclick="skillSetAll(false)">清空</button>'+
+  '<button class="btn btn-ghost sm" onclick="loadSkills()">刷新</button></div><div id="skill-list" class="skills-list"></div></div>'+
+  '<div id="skill-summary" class="skills-summary"></div></div>';
+
+function skillContext(){return $("pkg-v").textContent.trim()+"\n"+(S?S.cache:"")+"\n"+TG.uid}
+function renderSourceSkills(){
+  $("skill-mode").value=SK.mode;
+  $("skill-options").hidden=SK.mode==="none";
+  $("skill-all").hidden=$("skill-clear").hidden=SK.mode!=="custom";
+  var selected=SK.mode==="all"?SK.items:SK.items.filter(function(x){return SK.picked[x.name]});
+  var size=selected.reduce(function(n,x){return n+x.bytes},0);
+  $("skill-summary").textContent=SK.mode==="none"?"不携带技能。继续执行依赖技能的任务时，需在新电脑另行安装。":
+    (!SK.ready?(SK.error||"正在读取技能列表…"):"已选 "+selected.length+" / "+SK.items.length+" 个技能 · "+hsize(size));
+  if(!SK.ready){$("skill-list").innerHTML='<div class="skill-item">'+esc(SK.error||"正在读取技能列表…")+'</div>';return}
+  var visible=SK.items.filter(function(x){return (x.name+" "+x.description).toLowerCase().indexOf(SK.q.toLowerCase())!==-1});
+  $("skill-list").innerHTML=visible.map(function(x){
+    return '<label class="skill-item"><input type="checkbox" data-skill="'+esc(x.name)+'" '+
+      ((SK.mode==="all"||SK.picked[x.name])?'checked ':'')+(SK.mode!=="custom"?'disabled ':'')+'>'+
+      '<span class="skill-text">'+esc(x.name)+'<small>'+esc(x.description||"未填写简介")+'</small></span>'+
+      '<span class="skill-size">'+hsize(x.bytes)+'</span></label>';
+  }).join('')||'<div class="skill-item">'+(SK.items.length?"没有匹配的技能":"当前目录没有技能")+'</div>';
+}
+$("skill-list").onchange=function(e){if(e.target.dataset.skill)skillToggle(e.target.dataset.skill,e.target.checked)};
+function skillToggle(name,on){if(busyOn)return;SK.picked[name]=on;renderSourceSkills()}
+function skillSetAll(on){if(busyOn)return;SK.items.forEach(function(x){SK.picked[x.name]=on});renderSourceSkills()}
+function skillModeChanged(mode){
+  if(busyOn)return;
+  SK.mode=mode;SK.touched=true;
+  if(mode!=="none"&&(!SK.ready||SK.cache!==(S&&S.cache)))loadSkills();
+  renderSourceSkills();
+}
+function loadSkills(){
+  var cache=S&&S.cache;
+  if(SK.cache!==cache){SK.picked={};SK.items=[];SK.cache=cache}
+  SK.ready=false;SK.error="";renderSourceSkills();
+  return api("skills",{}).then(function(r){
+    if(SK.cache!==cache)return;
+    SK.ready=!!r.ok;SK.error=r.ok?"":(r.text||"读取技能失败，请刷新重试");SK.items=r.ok?(r.skills||[]):[];
+    var names=SK.items.map(function(x){return x.name});
+    Object.keys(SK.picked).forEach(function(name){if(names.indexOf(name)===-1)delete SK.picked[name]});
+    renderSourceSkills();
+  }).catch(function(){if(SK.cache===cache){SK.error="读取技能失败，请刷新重试";renderSourceSkills()}});
+}
+function renderSkillConflicts(){
+  if(!SK.dstItems.length){$("skills-dst").innerHTML='<div class="skills-box skills-summary">迁移包未携带技能。</div>';return}
+  var conflicts=SK.dstItems.filter(function(x){return x.status==="conflict"});
+  $("skills-dst").innerHTML='<div class="skills-box"><div class="skills-toolbar"><b>技能迁入</b>'+
+    (conflicts.length?'<button class="btn btn-ghost sm" onclick="skillSetAllActions(\'skip\')">全部跳过</button><button class="btn btn-ghost sm" onclick="skillSetAllActions(\'overwrite\')">全部覆盖</button>':'')+
+    '</div><div class="skills-summary">新增技能直接导入；相同内容自动跳过。同名冲突默认跳过，覆盖前备份本机技能并完整替换。</div><div class="skills-list">'+
+    SK.dstItems.map(function(x){
+      var choice=x.status==="conflict"?'<select data-skill="'+esc(x.name)+'" aria-label="'+esc(x.name)+' 处理方式">'+
+        '<option value="skip" '+(SK.actions[x.name]!=="overwrite"?'selected':'')+'>跳过，保留本机</option>'+
+        '<option value="overwrite" '+(SK.actions[x.name]==="overwrite"?'selected':'')+'>覆盖，使用迁移包</option></select>':
+        '<span class="skill-size">'+(x.status==="same"?"内容相同，跳过":"新增，直接导入")+'</span>';
+      return '<div class="skill-item"><span class="skill-text">'+esc(x.name)+'<small>迁移包 '+hsize(x.bytes)+
+        (x.status!=="new"?' · 本机 '+hsize(x.local_bytes):'')+'</small></span>'+choice+'</div>';
+    }).join('')+'</div></div>';
+  $("skills-dst").onchange=function(e){if(e.target.dataset.skill)skillSetAction(e.target.dataset.skill,e.target.value)};
+}
+function skillSetAction(name,action){if(busyOn)return;SK.actions[name]=action;renderSkillConflicts()}
+function skillSetAllActions(action){if(busyOn)return;SK.dstItems.forEach(function(x){if(x.status==="conflict")SK.actions[x.name]=action});renderSkillConflicts()}
+
+var _skillsApi=api;
+api=function(name,payload){
+  payload=Object.assign({},payload||{});
+  if(name==="collect"){
+    if(SK.mode!=="none"&&(!SK.ready||SK.cache!==(S&&S.cache)))return Promise.resolve({ok:false,text:"请先读取当前路径的技能列表，确认后再打包。"});
+    payload.skill_mode=SK.mode;
+    payload.skill_names=SK.items.filter(function(x){return SK.picked[x.name]}).map(function(x){return x.name});
+  }
+  if(name==="apply"){
+    if(SK.dstScope!==skillContext())return Promise.resolve({ok:false,text:"迁移包或目标已变化，请先重新检查并确认技能选择。"});
+    payload.skill_actions=Object.assign({},SK.actions);
+  }
+  var scope=name==="check"?skillContext():"";
+  return _skillsApi(name,payload).then(function(r){
+    if(name==="check"){
+      if(r.ok&&scope===skillContext()){
+        if(SK.dstScope!==scope)SK.actions={};
+        if(r.note&&r.pkg)$("pkg-v").textContent=r.pkg;
+        if(r.target_uid)TG.uid=r.target_uid;
+        SK.dstScope=skillContext();SK.dstItems=r.skills||[];
+        var next={};SK.dstItems.forEach(function(x){if(x.status==="conflict")next[x.name]=SK.actions[x.name]||"skip"});SK.actions=next;
+        renderSkillConflicts();
+      }else{SK.dstScope="";SK.actions={};$("skills-dst").innerHTML=""}
+    }
+    return r;
+  }).catch(function(error){if(name==="check"){SK.dstScope="";SK.actions={};$("skills-dst").innerHTML=""}throw error});
+};
+var _skillsGo=go;
+go=function(which){_skillsGo(which);if(which==="src"&&S&&(!SK.ready||SK.cache!==S.cache))loadSkills()};
+var _skillsChooseScope=chooseScope;
+chooseScope=function(mode){_skillsChooseScope(mode);if(!SK.touched){SK.mode=mode==="all"?"all":"none";renderSourceSkills()}};
+var _skillsRenderPaths=renderPaths;
+renderPaths=function(){_skillsRenderPaths();if(SK.cache!==null&&SK.cache!==(S&&S.cache)){SK.dstScope="";SK.actions={};loadSkills()}};
+var _skillsApply=doApply;
+doApply=function(){if(busyOn)return;if(SK.dstScope!==skillContext()){doCheck();toast("检查后请确认技能处理方式，再执行迁移。");return}_skillsApply()};
+var _skillsBusy=busy;
+busy=function(on){_skillsBusy(on);["skills-src","skills-dst"].forEach(function(id){$(id).querySelectorAll("button,input,select").forEach(function(el){el.disabled=on||(el.type==="checkbox"&&SK.mode!=="custom")})})};
+renderSourceSkills();
+</script>

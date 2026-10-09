@@ -123,7 +123,7 @@ def install_core(core):
         local_rows, _, _ = core["_read_sessions"](env.db)
         ids = {row.get("id") for row in local_rows}
         updates = [item for item in checked.get("todo") or [] if item["id"] in ids]
-        if not updates:
+        if not updates and not core["_skills_require_transaction"]():
             return original_apply(pkg, env, backup_dir, log, target_uid)
         if any(not item["has_body"] for item in updates):
             return {"ok": False, "text": "迁移包中的已有会话缺少正文，已停止更新，请重新打包。", "done": 0}
@@ -297,6 +297,8 @@ def install_core(core):
         "apply_migrate": apply_migrate,
         "_copy_tree": copy_tree,
     })
+    from wb_skills import install_core as install_skills
+    install_skills(core)
 
 
 class _DefaultBrowserProcess:
@@ -327,3 +329,5 @@ def find_browser(candidates):
 def install_web(web):
     web["_DEFAULT_BROWSER_PROC"] = default_browser_process
     web["find_browser"] = lambda: find_browser(web["EDGE_CANDIDATES"])
+    from wb_skills import install_web as install_skills
+    install_skills(web)

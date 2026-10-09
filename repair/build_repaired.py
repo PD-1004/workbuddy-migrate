@@ -88,6 +88,8 @@ def patch_core_function(code):
     patch = Patch(code)
     if code.co_name == "_copy_tree":
         patch.replace(98, 132, [("LOAD_GLOBAL", "_same_content"), ("LOAD_FAST", "s"), ("LOAD_FAST", "d"), ("CALL_FUNCTION", 2)])
+    elif code.co_name == "collect_source":
+        patch.replace(290, 314, [("LOAD_GLOBAL", "_new_package_path"), ("LOAD_FAST", "dest_parent"), ("CALL_FUNCTION", 1), ("STORE_FAST", "pkg")])
     elif code.co_name == "check_migrate":
         patch.replace(404, 422, [("LOAD_GLOBAL", "_retained_ids"), ("LOAD_FAST", "local_rows"), ("LOAD_FAST", "src_rows"), ("CALL_FUNCTION", 2), ("STORE_DEREF", "local_ids")])
     elif code.co_name == "apply_migrate":
@@ -103,10 +105,15 @@ def patch_core_function(code):
         for line, source in ((1292, "s"), (1321, "cand")):
             start, end = condition_span(code, line)
             patch.replace(start, end, [("LOAD_GLOBAL", "_merge_updated_tree"), ("LOAD_FAST", source), ("LOAD_FAST", "d"), ("CALL_FUNCTION", 2)])
+        start, end = condition_span(code, 1375)
+        patch.replace(start, end, [("LOAD_GLOBAL", "_should_skip_skill"), ("LOAD_FAST", "s"), ("LOAD_FAST", "d"), ("CALL_FUNCTION", 2)])
+        patch.replace(2452, 2464, [("LOAD_GLOBAL", "_install_skill"), ("LOAD_FAST", "s"), ("LOAD_FAST", "d"), ("CALL_FUNCTION", 2), ("POP_TOP", 0)])
     return patch.finish() if bytes(patch.data) != code.co_code else code
 
 
 TEXT = {
+    "⑤ 合并技能目录（只补缺失，不覆盖本机）": "⑤ 迁入技能（同名技能按所选方式处理）",
+    "  [技能] %d 个技能两边都有，保留本机版不覆盖：%s": "  [技能] %d 个同名技能，请查看技能列表选择跳过或覆盖：%s",
     "会话：源机未删除 %d 条，本机缺 %d 条（只补缺，不覆盖）": "会话：源机未删除 %d 条，本机需迁移/更新 %d 条（仅更新源机较新的会话）",
     "没有需要处理的内容，本机已是最新": "无需迁移：已有会话以本机较新或相同版本为准",
     "完成：新迁移 %d 条，修复路径 %d 处，补技能 %d 个，产物文件 %d 个": "完成：迁移/更新 %d 条，修复路径 %d 处，补技能 %d 个，产物文件 %d 个",
@@ -169,6 +176,10 @@ def rebuild_pyz(data):
     payload = zlib.compress(marshal.dumps(helper), 6)
     toc.append(("wb_fixes", (0, len(output), len(payload))))
     output.extend(payload)
+    helper = compile((HERE / "wb_skills.py").read_text(encoding="utf-8"), "wb_skills.py", "exec")
+    payload = zlib.compress(marshal.dumps(helper), 6)
+    toc.append(("wb_skills", (0, len(output), len(payload))))
+    output.extend(payload)
     config = json.loads((HERE / "update_config.json").read_text(encoding="utf-8"))
     updates = (HERE / "wb_updates.py").read_text(encoding="utf-8")
     for key in ("RELEASE_BASE", "UPDATE_FEED"):
@@ -180,7 +191,7 @@ def rebuild_pyz(data):
     offset = len(output)
     output.extend(marshal.dumps(toc))
     output[8:12] = struct.pack("!I", offset)
-    return bytes(output), changed + ["wb_fixes (added)", "wb_updates (added)"]
+    return bytes(output), changed + ["wb_fixes (added)", "wb_updates (added)", "wb_skills (added)"]
 
 
 def main():
@@ -207,10 +218,15 @@ def main():
             html = html.replace("只补本机缺少的会话，已有的不覆盖", "补入缺少的会话；源机较新的已有会话会更新")
             html = html.replace("会话会登记到这个账号下", "新增会话登记到这个账号下，已有会话保留原账号")
             html = html.replace("先自动备份本机数据库", "先备份本机数据库和将替换的文件")
+            html = html.replace("技能只补缺失，不覆盖本机已有", "技能按已选方式处理，覆盖前备份本机技能")
+            html = html.replace("全部会话正文 + 产物文件 + 技能", "全部会话正文 + 产物文件 + 所选技能")
+            html = html.replace('<div id="dest-row"></div>', '<div id="skills-src"></div><div id="dest-row"></div>', 1)
+            html = html.replace('<div id="pkg-row"></div>', '<div id="pkg-row"></div><div id="skills-dst"></div>', 1)
             html = html.replace("补登记会话、搬产物本体、改写路径、补装技能。补缺与更新，执行前自动备份。", "补登记会话、更新源机较新的已有会话、搬产物本体、改写路径、补装技能。替换前自动备份。")
             html = html.replace('<div class="wxwrap" id="wxwrap">', '<div class="header-actions"><button class="update-button" id="update-button" hidden onclick="checkUpdate(true)">更新</button><div class="wxwrap" id="wxwrap">', 1)
             html = html.replace('</header>', '</div></header>', 1)
             html = html.replace('</body>', (HERE / "update_ui.html").read_text(encoding="utf-8") + '\n</body>', 1)
+            html = html.replace('</body>', (HERE / "skills_ui.html").read_text(encoding="utf-8") + '\n</body>', 1)
             raw = html.encode("utf-8")
         else:
             raw = None

@@ -35,6 +35,10 @@ if not ORIGINAL:
     helper = types.ModuleType("wb_fixes")
     sys.modules["wb_fixes"] = helper
     exec(packed_code("wb_fixes"), helper.__dict__)
+    if "wb_skills" in toc:
+        skills = types.ModuleType("wb_skills")
+        sys.modules["wb_skills"] = skills
+        exec(packed_code("wb_skills"), skills.__dict__)
     updates = types.ModuleType("wb_updates")
     sys.modules["wb_updates"] = updates
     exec(packed_code("wb_updates"), updates.__dict__)
