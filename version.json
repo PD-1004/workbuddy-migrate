@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
-  "url": "https://github.com/PD-1004/workbuddy-session-migration-assistant/releases/tag/v1.1.0",
-  "notes": "新增技能按需迁移：源机可不携带、携带全部或自定义勾选技能，展示实际名称、简介和大小；新电脑检查后可逐项或批量选择跳过或覆盖同名技能，默认跳过。覆盖前完整备份旧技能，再整目录替换，拷贝失败恢复。blobs 等其他公共数据仍按原方式打包。"
+  "version": "1.1.1",
+  "url": "https://github.com/PD-1004/workbuddy-session-migration-assistant/releases/tag/v1.1.1",
+  "notes": "修复合法技能链接被误报为无法迁移：有效链接和目录映射按真实内容打包；失效或循环链接仅标记对应技能不可用并提示原因，其他技能仍可选择和迁移。去掉重复错误提示，保留链接技能覆盖前备份及失败恢复。下载带 Win 的新版 EXE 后替换旧程序即可。"
 }
