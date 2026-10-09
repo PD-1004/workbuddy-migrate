@@ -7,6 +7,9 @@ import time
 import types
 import sys
 import marshal
+import os
+import stat
+import subprocess
 import urllib.request
 from http.server import ThreadingHTTPServer
 import unittest
@@ -42,6 +45,125 @@ class SkillTests(unittest.TestCase):
     def apply(self, pkg, actions=None):
         return self.core["apply_migrate"](str(pkg), self.fixture.env,
             target_uid="target-user", skill_actions=actions)
+
+    def junction(self, link, target):
+        link.parent.mkdir(parents=True, exist_ok=True)
+        missing_target = not target.exists()
+        if missing_target:
+            target.mkdir(parents=True)
+        result = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        if missing_target:
+            os.rmdir(target)
+        def remove_link():
+            if os.path.lexists(link) and self.is_link(link):
+                os.rmdir(link)
+        self.addCleanup(remove_link)
+
+    def is_link(self, path):
+        return bool(os.lstat(path).st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+    def test_linked_skill_is_packed_as_real_files(self):
+        actual = self.fixture.root / "shared-alpha"
+        shutil.move(str(self.source / "alpha"), actual)
+        self.junction(self.source / "alpha", actual)
+        items = self.core["list_skills"](str(self.fixture.sc))
+        self.assertEqual(items[0]["files"], 2)
+        self.assertNotIn("error", items[0])
+        pkg = self.pack("custom", ["alpha"])
+        packed = pkg / "缓存目录" / "skills" / "alpha"
+        self.assertFalse(self.is_link(packed))
+        self.assertEqual((packed / "assets" / "template.txt").read_text(), "required resource")
+        self.assertTrue(self.apply(pkg, {"alpha": "overwrite"})["ok"])
+        self.assertEqual((self.target / "alpha" / "assets" / "template.txt").read_text(), "required resource")
+        self.assertEqual((actual / "assets" / "template.txt").read_text(), "required resource")
+
+    def test_linked_skills_parent_does_not_block_inventory(self):
+        actual = self.fixture.root / "shared-skills"
+        shutil.move(str(self.source), actual)
+        self.junction(self.source, actual)
+        self.assertEqual(len(self.core["list_skills"](str(self.fixture.sc))), 2)
+        pkg = self.pack()
+        self.assertTrue((pkg / "缓存目录" / "skills" / "beta" / "SKILL.md").is_file())
+
+    def test_nested_shared_links_are_counted_and_materialized(self):
+        actual = self.fixture.root / "shared-resources"
+        write(actual / "example.txt", "external resource")
+        for name in ("first", "second"):
+            self.junction(self.source / "alpha" / name, actual)
+        items = self.core["list_skills"](str(self.fixture.sc))
+        self.assertEqual(items[0]["files"], 4)
+        pkg = self.pack("custom", ["alpha"])
+        for name in ("first", "second"):
+            folder = pkg / "缓存目录" / "skills" / "alpha" / name
+            self.assertFalse(self.is_link(folder))
+            self.assertEqual((folder / "example.txt").read_text(), "external resource")
+
+    def test_cyclic_link_marks_only_affected_skill_unavailable(self):
+        self.junction(self.source / "alpha" / "loop", self.source / "alpha")
+        items = self.core["list_skills"](str(self.fixture.sc))
+        self.assertIn("循环", items[0]["error"])
+        self.assertIn("alpha", items[0]["error"])
+        self.assertNotIn("error", items[1])
+        pkg = self.pack()
+        self.assertFalse((pkg / "缓存目录" / "skills" / "alpha").exists())
+        self.assertTrue((pkg / "缓存目录" / "skills" / "beta" / "SKILL.md").is_file())
+        manifest = json.loads((pkg / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["skill_selection"]["skipped"][0]["name"], "alpha")
+        result = self.core["collect_source"](str(self.fixture.sc), str(self.fixture.sw),
+            str(self.fixture.root / "invalid-custom"), skill_mode="custom", skill_names=["alpha"])
+        self.assertFalse(result["ok"])
+        self.assertIn("循环", result["text"])
+
+    def test_broken_link_is_visible_without_hiding_valid_skills(self):
+        self.junction(self.source / "gamma", self.fixture.root / "missing-skill")
+        items = {x["name"]: x for x in self.core["list_skills"](str(self.fixture.sc))}
+        self.assertIn("gamma", items)
+        self.assertIn("失效", items["gamma"]["error"])
+        pkg = self.pack()
+        self.assertFalse(os.path.lexists(pkg / "缓存目录" / "skills" / "gamma"))
+        self.assertTrue((pkg / "缓存目录" / "skills" / "alpha" / "SKILL.md").is_file())
+
+    def test_linked_local_skill_is_backed_up_without_changing_external_target(self):
+        actual = self.fixture.root / "shared-local-alpha"
+        shutil.move(str(self.target / "alpha"), actual)
+        self.junction(self.target / "alpha", actual)
+        result = self.apply(self.pack(), {"alpha": "overwrite"})
+        self.assertTrue(result["ok"], result)
+        self.assertFalse(self.is_link(self.target / "alpha"))
+        self.assertEqual((actual / "SKILL.md").read_text(), "old skill")
+        backup = pathlib.Path(result["backup_dir"]) / "缓存目录" / "skills" / "alpha"
+        self.assertEqual((backup / "obsolete.txt").read_text(), "old-only file")
+
+    def test_failed_import_restores_local_skill_link(self):
+        actual = self.fixture.root / "shared-local-alpha"
+        shutil.move(str(self.target / "alpha"), actual)
+        self.junction(self.target / "alpha", actual)
+        pkg = self.pack()
+        real_copytree = shutil.copytree
+        def fail_beta(src, dst, *args, **kwargs):
+            if pathlib.Path(src).name == "beta" and ".wb-skill-" in str(dst):
+                raise OSError("synthetic linked-skill rollback")
+            return real_copytree(src, dst, *args, **kwargs)
+        with mock.patch.object(shutil, "copytree", side_effect=fail_beta):
+            result = self.apply(pkg, {"alpha": "overwrite"})
+        self.assertFalse(result["ok"])
+        self.assertIn("synthetic linked-skill rollback", result["text"])
+        self.assertTrue(self.is_link(self.target / "alpha"))
+        self.assertEqual((actual / "SKILL.md").read_text(), "old skill")
+        self.assertFalse((self.target / "beta").exists())
+
+    def test_broken_local_link_is_skipped_without_changing_other_skills(self):
+        shutil.rmtree(self.target / "alpha")
+        self.junction(self.target / "alpha", self.fixture.root / "missing-local-skill")
+        pkg = self.pack()
+        checked = self.core["check_migrate"](str(pkg), self.fixture.env)
+        self.assertEqual(checked["skills"][0]["status"], "unavailable")
+        self.assertIn("失效", checked["skills"][0]["error"])
+        result = self.apply(pkg)
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(self.is_link(self.target / "alpha"))
+        self.assertTrue((self.target / "beta" / "SKILL.md").is_file())
 
     def test_inventory_lists_real_skills_descriptions_and_sizes(self):
         items = self.core["list_skills"](str(self.fixture.sc))

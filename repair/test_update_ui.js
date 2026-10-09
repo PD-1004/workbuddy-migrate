@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const {execFileSync} = require('node:child_process');
 const root = path.join(__dirname, '..');
-const html = execFileSync('python', ['-c', "import sys,pathlib;sys.path.insert(0,'repair');import build_repaired as b;d=next(pathlib.Path('修复版').glob('*.exe')).read_bytes();sys.stdout.buffer.write(next(b.unpack(e) for e in b.archive(d)[3] if e['name']=='wb_ui.html'))"], {cwd:root}).toString('utf8');
+const html = execFileSync('python', ['-c', "import sys,pathlib,json;sys.path.insert(0,'repair');import build_repaired as b;d=pathlib.Path(json.loads(pathlib.Path('repair/build/build_report.json').read_text(encoding='utf-8'))['output']).read_bytes();sys.stdout.buffer.write(next(b.unpack(e) for e in b.archive(d)[3] if e['name']=='wb_ui.html'))"], {cwd:root}).toString('utf8');
 const buttonMarkup = html.match(/<button[^>]*id="update-button"[^>]*>/)[0];
 const script = fs.readFileSync(path.join(__dirname, 'update_ui.html'), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 

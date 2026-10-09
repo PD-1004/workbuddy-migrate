@@ -13,7 +13,8 @@ from unittest.mock import patch
 if "--packed" in sys.argv:
     sys.argv.remove("--packed")
     from build_repaired import archive, unpack
-    data = next((Path(__file__).absolute().parent.parent / "修复版").glob("*.exe")).read_bytes()
+    report = json.loads((Path(__file__).absolute().parent / "build" / "build_report.json").read_text(encoding="utf-8"))
+    data = Path(report["output"]).read_bytes()
     pyz = next(unpack(e) for e in archive(data)[3] if e["name"] == "PYZ.pyz")
     _, position, length = dict(marshal.loads(pyz[struct.unpack("!I", pyz[8:12])[0]:]))["wb_updates"]
     wb_updates = types.ModuleType("wb_updates")

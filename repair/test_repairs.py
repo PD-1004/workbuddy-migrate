@@ -1,5 +1,6 @@
 """Regression tests run against original or repaired EXE modules."""
 import contextlib
+import json
 import marshal
 import os
 import pathlib
@@ -22,7 +23,7 @@ MODULE_DIR = ROOT / "audit" if ORIGINAL else ROOT / "repair" / "build"
 
 if not ORIGINAL:
     from build_repaired import archive, unpack
-    packed_exe = next((ROOT / "修复版").glob("*.exe")).read_bytes()
+    packed_exe = pathlib.Path(json.loads((MODULE_DIR / "build_report.json").read_text(encoding="utf-8"))["output"]).read_bytes()
     _, _, _, entries = archive(packed_exe)
     entries = {entry["name"]: entry for entry in entries}
     pyz = unpack(entries["PYZ.pyz"])
