@@ -2,7 +2,11 @@
 
 Windows 桌面工具，用于把 WorkBuddy 的会话记录、项目文件和相关产物从旧电脑迁移到新电脑。
 
-[下载最新版本](https://github.com/PD-1004/workbuddy-session-migration-assistant/releases/latest)
+[下载 Windows 版本](https://github.com/PD-1004/workbuddy-migrate/releases/latest)
+
+选择这台电脑的角色，按提示完成打包或迁入。
+
+![选择旧电脑或新电脑](docs/images/home.jpg)
 
 ## 功能
 
@@ -15,6 +19,18 @@ Windows 桌面工具，用于把 WorkBuddy 的会话记录、项目文件和相�
 - **文件内容比对**：拷贝文件按实际内容比较，内容不同但大小相同的文件也能更新。
 - **备份与失败恢复**：执行前备份数据库及将替换的文件；已有会话更新失败时回滚数据库并恢复已备份文件，便于重试。
 - **版本提醒**：启动时检查版本，只有发现新版才显示右上角「更新」入口并弹窗提示；点击「前往下载」打开本仓库的发行页面。当前已是最新版或检查失败时不显示入口。
+
+## 界面预览
+
+旧电脑可以按需携带技能，自定义勾选时查看名称、简介与大小。
+
+![自定义选择携带的技能](docs/images/skills-pack.jpg)
+
+新电脑检查迁移包后，可对同名技能选择跳过或覆盖，也可批量设置。
+
+![技能迁入时选择跳过或覆盖](docs/images/skills-import.jpg)
+
+界面图使用示例数据，账号、路径等信息已遮挡。
 
 ## 使用方法
 
@@ -29,28 +45,5 @@ Windows 桌面工具，用于把 WorkBuddy 的会话记录、项目文件和相�
 本机会话时间更新或与源机相同的会话会保留；相同时间的内容冲突不会自动合并。更新提醒需要联网，离线时仍可迁移。下载新版后需自行更换 EXE。
 
 技能选项仅调整 `skills` 目录，不会省略 `blobs`、剪贴板图片等其他公共数据。未携带技能时，会话仍可迁移；继续执行依赖这些技能的任务，需在新电脑自行安装。若浏览器无法启动而进入原有简化界面，沿用携带全部技能、同名技能跳过的方式。
-
-## 维护与构建
-
-本仓库提供可读的维护代码与回归测试，可执行文件放在 Releases。由于完整原始源码已遗失，构建采用保留原程序资源并修补打包模块的方式。
-
-使用 **Python 3.9**，无需第三方构建依赖。从 v1.0.0 的 Releases 下载 `workbuddy-build-baseline.exe`，放在项目根目录作为构建基准，然后运行：
-
-```powershell
-python repair/build_repaired.py
-python repair/test_repairs.py
-python repair/test_skills.py
-python repair/test_updates.py --packed
-```
-
-输出位于 `修复版/`，其中 EXE 可单独运行。构建脚本校验原始 EXE 的 SHA256，避免将补丁应用于不匹配的程序。
-
-## 发布更新
-
-1. 修改 `repair/wb_updates.py` 中的 `VERSION`，使用三段数字版本号，例如 `1.1.0`。
-2. 构建并验证，在本仓库创建对应版本 Release，上传新版 EXE。
-3. 安装包可下载后，修改根目录的 `version.json`：版本号与 Release 一致，`url` 指向对应的 `/releases/tag/v版本号` 页面，`notes` 填写更新说明，再提交推送。
-
-更新检查地址保存在 `repair/update_config.json`。代码、版本信息和下载文件均使用本仓库，不需要使用者登录 GitHub。
 
 开发者微信：**PD-1104**；公众号：**掌心向暖RPA自动化**。
