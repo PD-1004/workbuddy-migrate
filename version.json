@@ -1,5 +1,5 @@
 {
-  "version": "1.1.1",
-  "url": "https://github.com/PD-1004/workbuddy-session-migration-assistant/releases/tag/v1.1.1",
-  "notes": "修复合法技能链接被误报为无法迁移：有效链接和目录映射按真实内容打包；失效或循环链接仅标记对应技能不可用并提示原因，其他技能仍可选择和迁移。去掉重复错误提示，保留链接技能覆盖前备份及失败恢复。下载带 Win 的新版 EXE 后替换旧程序即可。"
+  "version": "1.1.2",
+  "url": "https://github.com/PD-1004/workbuddy-session-migration-assistant/releases/tag/v1.1.2",
+  "notes": "运行日志改为容器内部滚动查看，日志增多不再撑高整个界面；程序运行时不再创建或写入 wbmig-log.txt，界面日志仍正常显示。下载 WorkBuddy-Migrate-Win-v1.1.2.exe 替换旧程序即可。"
 }
