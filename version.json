@@ -1,0 +1,5 @@
+{
+  "version": "1.0.0",
+  "url": "https://github.com/PD-1004/workbuddy-session-migration-assistant/releases/tag/v1.0.0",
+  "notes": "支持全部或按项目迁移、较新会话更新、文件内容比对与迁移前备份，提供右上角更新按钮和新版弹窗。"
+}

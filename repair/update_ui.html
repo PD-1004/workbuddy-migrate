@@ -1,0 +1,38 @@
+<style>
+.header-actions{display:flex;align-items:center;gap:18px;flex-shrink:0}
+.update-button{border:0;border-radius:999px;background:#35be69;color:#000;padding:9px 20px;font:inherit;font-size:16px;cursor:pointer;white-space:nowrap}
+.update-button:disabled{opacity:.6;cursor:wait}
+#update-mask{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;display:none;align-items:center;justify-content:center}
+#update-mask.on{display:flex}
+#update-notes{white-space:pre-wrap;max-height:35vh;overflow:auto}
+</style>
+<div id="update-mask" role="dialog" aria-modal="true" aria-labelledby="update-title">
+  <div class="dialog">
+    <h4 id="update-title">有新版本可用</h4>
+    <p id="update-version"></p><p id="update-notes"></p>
+    <div class="rowbtn"><button class="btn" onclick="closeUpdate()">稍后再说</button><button class="btn btn-dark" id="update-download">前往下载</button></div>
+  </div>
+</div>
+<script>
+var updateChecking=false, updateInfo=null, updateShown=false;
+function closeUpdate(){document.getElementById('update-mask').classList.remove('on');}
+function showUpdate(r){
+  if(document.getElementById('mask').classList.contains('on') || document.getElementById('pick-mask').classList.contains('on') || busyOn){setTimeout(function(){showUpdate(r)},1000);return;}
+  document.getElementById('update-version').textContent='当前版本 '+r.current+' → 新版本 '+r.version;
+  document.getElementById('update-notes').textContent=r.notes || '新版已发布，点击下方按钮查看说明并下载。';
+  document.getElementById('update-mask').classList.add('on');
+  updateInfo=r;updateShown=true;
+}
+function checkUpdate(manual){
+  if(updateChecking)return;
+  updateChecking=true;var button=document.getElementById('update-button');button.disabled=true;
+  get('update').then(function(r){
+    button.title='当前版本 '+r.current;
+    if(r.ok && r.available){if(manual || !updateShown)showUpdate(r);}
+    else if(manual){toast(r.ok ? '当前已是最新版本（'+r.current+'）' : r.msg);}
+  }).catch(function(){if(manual)toast('暂时无法检查更新，请稍后重试。');})
+  .then(function(){updateChecking=false;button.disabled=false;});
+}
+document.getElementById('update-download').onclick=function(){if(updateInfo){window.open(updateInfo.url,'_blank','noopener');closeUpdate();}};
+setTimeout(function(){checkUpdate(false)},1500);
+</script>
