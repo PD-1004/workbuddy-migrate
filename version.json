@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
-  "url": "https://github.com/PD-1004/workbuddy-session-migration-assistant/releases/tag/v1.0.2",
-  "notes": "修复迁移包检查误报 no such table: sessions：数据库缺失时不再创建空库，明确提示空库和缺少会话表，并避免将检查快照、备份或项目产物数据库作为迁移源。迁移包不完整时请重新传输整个文件夹。"
+  "version": "1.1.0",
+  "url": "https://github.com/PD-1004/workbuddy-session-migration-assistant/releases/tag/v1.1.0",
+  "notes": "新增技能按需迁移：源机可不携带、携带全部或自定义勾选技能，展示实际名称、简介和大小；新电脑检查后可逐项或批量选择跳过或覆盖同名技能，默认跳过。覆盖前完整备份旧技能，再整目录替换，拷贝失败恢复。blobs 等其他公共数据仍按原方式打包。"
 }
