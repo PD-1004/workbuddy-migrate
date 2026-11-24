@@ -1,4 +1,5 @@
 {
   "RELEASE_BASE": "https://github.com/PD-1004/workbuddy-migrate",
-  "UPDATE_FEED": "https://raw.githubusercontent.com/PD-1004/workbuddy-migrate/main/version.json"
+  "UPDATE_FEED": "https://raw.githubusercontent.com/PD-1004/workbuddy-migrate/main/version.json",
+  "EXTRA_RELEASE_BASES": ["https://github.com/PD-1004/workbuddy-session-migration-assistant"]
 }

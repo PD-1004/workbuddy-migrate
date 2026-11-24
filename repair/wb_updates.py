@@ -6,6 +6,10 @@ import urllib.request
 VERSION = "1.1.3"
 RELEASE_BASE = "__RELEASE_BASE__"
 UPDATE_FEED = "__UPDATE_FEED__"
+# 仓库改过名：旧版 EXE 内嵌的仍是旧仓库名，线上 version.json 的 url 必须用旧名
+# 才能让旧版通过校验。新版额外信任旧名，避免"新版校验不过自己的更新源"。
+# 构建时由 update_config.json 注入；额外 base 来自构建配置，不接受运行时输入。
+EXTRA_RELEASE_BASES = []
 
 
 def version_tuple(value):
@@ -14,14 +18,19 @@ def version_tuple(value):
     return tuple(int(part) for part in value.split("."))
 
 
-def check_update(current=VERSION, feed=UPDATE_FEED, release_base=RELEASE_BASE):
+def check_update(current=VERSION, feed=UPDATE_FEED, release_base=RELEASE_BASE, extra_bases=None):
     try:
         request = urllib.request.Request(feed, headers={"User-Agent": "WorkBuddy-Migration-Assistant/" + current, "Cache-Control": "no-cache"})
         with urllib.request.urlopen(request, timeout=5) as response:
             data = json.loads(response.read(65537).decode("utf-8"))
         remote = version_tuple(data["version"])
         url = data["url"]
-        if url not in (release_base + "/releases/latest", release_base + "/releases/tag/v" + data["version"]):
+        bases = [release_base] + list(EXTRA_RELEASE_BASES if extra_bases is None else extra_bases)
+        allowed = set()
+        for base in bases:
+            allowed.add(base + "/releases/latest")
+            allowed.add(base + "/releases/tag/v" + data["version"])
+        if url not in allowed:
             raise ValueError("invalid release URL")
         return {"ok": True, "available": remote > version_tuple(current), "current": current,
                 "version": data["version"], "url": url, "notes": str(data.get("notes") or "")[:2000]}

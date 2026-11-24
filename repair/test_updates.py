@@ -56,6 +56,30 @@ class UpdateTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertFalse(result["available"])
 
+    def test_legacy_repo_name_is_accepted(self):
+        """仓库改名后：主 base 是新名，旧名作为额外 base 仍须放行。"""
+        legacy = "https://github.com/PD-1004/workbuddy-session-migration-assistant"
+        current = "https://github.com/PD-1004/workbuddy-migrate"
+        with patch("urllib.request.urlopen", return_value=io.BytesIO(json.dumps({
+            "version": "1.1.3", "url": legacy + "/releases/tag/v1.1.3"
+        }).encode())):
+            result = wb_updates.check_update("1.1.2", "https://feed.test/version.json", current, [legacy])
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["available"])
+
+    def test_extra_base_does_not_widen_to_evil_host(self):
+        """额外 base 只能精确放行该 base 下的 release，不得放宽到任意域名。"""
+        legacy = "https://github.com/PD-1004/workbuddy-session-migration-assistant"
+        current = "https://github.com/PD-1004/workbuddy-migrate"
+        for url in ["https://evil.example/releases/tag/v1.1.3",
+                    "https://github.com/PD-1004/other/releases/tag/v1.1.3",
+                    legacy + "/releases/../../../attacker/releases/tag/v1.1.3"]:
+            with patch("urllib.request.urlopen", return_value=io.BytesIO(json.dumps({
+                "version": "1.1.3", "url": url
+            }).encode())):
+                result = wb_updates.check_update("1.1.2", "https://feed.test/version.json", current, [legacy])
+            self.assertFalse(result["ok"], url)
+
 
 if __name__ == "__main__":
     unittest.main()

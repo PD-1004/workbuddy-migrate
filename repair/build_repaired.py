@@ -368,6 +368,8 @@ def rebuild_pyz(data, build_dir=BUILD):
     updates = (HERE / "wb_updates.py").read_text(encoding="utf-8")
     for key in ("RELEASE_BASE", "UPDATE_FEED"):
         updates = updates.replace('"__' + key + '__"', repr(config[key]))
+    # 旧仓库名作为额外可信 base 注入，兼容已经发出的旧版 EXE 与改名前的更新源
+    updates = updates.replace("EXTRA_RELEASE_BASES = []", "EXTRA_RELEASE_BASES = " + repr(config.get("EXTRA_RELEASE_BASES", [])))
     helper = compile(updates, "wb_updates.py", "exec")
     payload = zlib.compress(marshal.dumps(helper), 6)
     toc.append(("wb_updates", (0, len(output), len(payload))))
