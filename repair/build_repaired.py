@@ -125,6 +125,187 @@ TEXT = {
 }
 
 
+LOAD_TARGETS_OLD = """function loadTargets(){
+  TG.loading = true; renderTargets();
+  get("accounts").then(function(r){
+    TG.loading = false;
+    if(r.ok){
+      TG.accounts = r.accounts || [];
+      if(!TG.uid && TG.accounts.length) TG.uid = TG.accounts[0].uid;
+    }
+    renderTargets();
+  }).catch(function(){ TG.loading=false; renderTargets(); });
+}"""
+
+LOAD_TARGETS_NEW = """function loadTargets(){
+  TG.loading = true; renderTargets();
+  get("accounts").then(function(r){
+    TG.loading = false;
+    if(r.ok){
+      TG.accounts = r.accounts || [];
+      if(!TG.uid && TG.accounts.length) TG.uid = TG.accounts[0].uid;
+      TG.err = TG.accounts.length ? "" : "本机还没读到已登录的账号：先启动一次 WorkBuddy 并登录，再回到这里点「刷新」。";
+    }else{
+      // 原版这里把 r.text 直接丢了，用户只看到空列表、不知道为什么
+      TG.accounts = [];
+      var msg = r.text || "读取本机账号失败";
+      if(TG.err !== msg) toast(msg, true);
+      TG.err = msg;
+    }
+    renderTargets();
+  }).catch(function(){
+    TG.loading = false;
+    var msg = "读取本机账号失败：本地服务没有响应";
+    if(TG.err !== msg) toast(msg, true);
+    TG.err = msg;
+    renderTargets();
+  });
+}"""
+
+PICK_EMPTY_OLD = """    else if(!TG.accounts.length) h += '<div class="empty">本机会话库里还没读到账号。<br>第一次用 WorkBuddy 登录后再来检查。</div>';"""
+
+PICK_EMPTY_NEW = """    else if(!TG.accounts.length) h += '<div class="empty">'+(TG.err ? esc(TG.err).replace(/\\n/g,"<br>") : '本机会话库里还没读到账号。<br>第一次用 WorkBuddy 登录后再来检查。')+'</div>';"""
+
+SUMMARY_EMPTY_OLD = """  if(!TG.accounts.length){ sum.textContent = "未选择 —— 在上方「打包范围」旁的弹窗里挑账号"; return }"""
+
+SUMMARY_EMPTY_NEW = """  if(!TG.accounts.length){ sum.textContent = TG.err || "未选择 —— 在上方「打包范围」旁的弹窗里挑账号"; return }"""
+
+
+def fix_accounts_ui(html):
+    """Issue #1：账号列表为空或读取失败时，前端不再静默吞掉原因。"""
+    for old, new in (
+        (LOAD_TARGETS_OLD, LOAD_TARGETS_NEW),
+        (PICK_EMPTY_OLD, PICK_EMPTY_NEW),
+        (SUMMARY_EMPTY_OLD, SUMMARY_EMPTY_NEW),
+    ):
+        assert html.count(old) == 1, "wb_ui.html 结构已变化，账号提示补丁无法应用：%r" % old[:48]
+        html = html.replace(old, new, 1)
+    return html
+
+
+def guard_version_requests(html):
+    # Discard responses belonging to selection state replaced by a profile switch.
+    for name, state, stale in (
+        ("loadAccounts", "PK", "versionState!==PK"),
+        ("pickAccount", "PK", "versionState!==PK||PK.uid!==uid"),
+        ("loadAllPreview", "PK", "versionState!==PK"),
+        ("loadTargets", "TG", "versionState!==TG"),
+    ):
+        start = html.index("function " + name + "(")
+        end = html.index("\nfunction ", start)
+        section = html[start:end]
+        signature_end = section.index("{\n") + 2
+        section = section[:signature_end] + "  var versionState=" + state + ";\n" + section[signature_end:]
+        if name == "loadAllPreview":
+            anchors = ("  function next(){",)
+        else:
+            anchors = (".then(function(r){", ".catch(function(){")
+        for anchor in anchors:
+            assert section.count(anchor) == 1, (name, anchor)
+            section = section.replace(anchor, anchor + "\n    if(" + stale + ")return;", 1)
+        html = html[:start] + section + html[end:]
+    return html
+
+
+"""布局补丁的锚点。全部带 assert count==1，原程序结构一变就立刻报错。"""
+
+# 标题旁的帮助图标：说明文字收进悬浮提示，平时不占版面
+HELP_DOT = ('<span class="helpwrap"><button type="button" class="helpdot" '
+            'aria-label="查看说明" aria-describedby="{tip_id}">'
+            '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+            'stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">'
+            '<line x1="12" y1="17" x2="12" y2="17"/><path d="M12 13.5V11a2 2 0 1 0-2-2"/></svg>'
+            '</button><span class="helptip" id="{tip_id}" role="tooltip">{tip}</span></span>')
+
+# ① 源机路径卡片：标题行（右侧留给版本切换）+ 去掉说明行（信息已在悬浮提示里）
+SRC_HEAD_OLD = """          <h3>本机（源机）的两个存储路径</h3>
+          <div class="desc">程序已按 WorkBuddy【设置 - 通用】自动识别并锁定；识别错了点右侧锁图标解锁编辑。</div>
+          <div id="src-paths"></div>"""
+
+SRC_HEAD_NEW = """          <div class="cardhead"><div class="htitle"><h3>本机（源机）的两个存储路径</h3>__SRC_TIP__</div>
+            <div class="verhost" id="ver-host-src"></div></div>
+          <div id="src-paths"></div>"""
+
+# ② 现机路径卡片：同上
+DST_HEAD_OLD = """          <h3>本机（现机）的两个存储路径</h3>
+          <div class="desc">导入时会把源机路径改写成本机路径，这两个值必须准确；读不到或识别错了点右侧锁图标解锁编辑。</div>
+          <div id="dst-paths"></div>"""
+
+DST_HEAD_NEW = """          <div class="cardhead"><div class="htitle"><h3>本机（现机）的两个存储路径</h3>__DST_TIP__</div>
+            <div class="verhost" id="ver-host-dst"></div></div>
+          <div id="dst-paths"></div>"""
+
+# ③ 「选择要迁走的数据」：说明行改成标题旁的感叹号图标
+PACK_HEAD_OLD = """          <h3>选择要迁走的数据</h3>
+          <div class="desc" id="pack-desc">在「打包范围」里选全部或指定，选定后会弹出窗口确认要打包的内容。</div>"""
+
+PACK_HEAD_NEW = """          <div class="cardhead"><div class="htitle"><h3>选择要迁走的数据</h3>__PACK_TIP__</div></div>
+          <div class="desc" id="pack-desc" hidden></div>"""
+
+# ④ 「打包范围」改成垂直字段：标签在上、下拉框在下，宽度撑满
+SCOPE_ROW_OLD = """          <div class="prow selrow" id="scope-row">
+            <div class="prow-inner"><span class="plabel">打包范围</span>
+              <div class="seldrop" id="scope-drop">"""
+
+SCOPE_ROW_NEW = """          <div class="prow vfield selrow" id="scope-row">
+            <span class="plabel">打包范围</span>
+            <div class="prow-inner">
+              <div class="seldrop" id="scope-drop">"""
+
+# ⑤ 收起 scope 字段后，让「携带技能」独立成同样结构的垂直字段行
+SCOPE_END_OLD = """              </div></div>
+          </div>
+          <div id="skills-src"></div><div id="dest-row"></div>"""
+
+SCOPE_END_NEW = """              </div>
+            </div>
+          </div>
+          <div class="prow vfield" id="skills-src"></div>
+          <div id="dest-row"></div>"""
+
+# ⑥ 两个路径行压缩上下留白
+PATH_ROW_OLD = """  return '<div class="prow locked" id="row-'+id+'">'+"""
+PATH_ROW_NEW = """  return '<div class="prow locked pcompact" id="row-'+id+'">'+"""
+
+PATH_EDIT_OLD = """  return '<div class="prow editing" id="row-'+id+'">'+"""
+PATH_EDIT_NEW = """  return '<div class="prow editing pcompact" id="row-'+id+'">'+"""
+
+TIPS = {
+    "__SRC_TIP__": ("tip-src-path",
+                    "按 WorkBuddy【设置 - 通用】自动识别并锁定。<br>"
+                    "识别错了：点右侧锁图标解锁编辑，或用标题右侧的"
+                    "<b>国内版 / 国际版</b> 一键换回该版本的默认路径。"),
+    "__DST_TIP__": ("tip-dst-path",
+                    "导入时会把源机路径改写成本机路径，这两个值必须准确。<br>"
+                    "读不到或识别错了：点右侧锁图标解锁编辑，或用标题右侧的"
+                    "<b>国内版 / 国际版</b> 切换。"),
+    "__PACK_TIP__": ("tip-pack",
+                     "在「打包范围」里选<b>全部打包</b>或<b>指定打包</b>，"
+                     "选定后会弹出窗口确认要打包的内容。<br>"
+                     "两项都定了（账号、会话）才能点「一键拷贝」。"),
+}
+
+
+def fix_layout(html):
+    """压缩路径行、版本切换提到标题行、字段改垂直堆叠、说明收进悬浮提示。"""
+    for old, new in (
+        (SRC_HEAD_OLD, SRC_HEAD_NEW),
+        (DST_HEAD_OLD, DST_HEAD_NEW),
+        (PACK_HEAD_OLD, PACK_HEAD_NEW),
+        (SCOPE_ROW_OLD, SCOPE_ROW_NEW),
+        (SCOPE_END_OLD, SCOPE_END_NEW),
+        (PATH_ROW_OLD, PATH_ROW_NEW),
+        (PATH_EDIT_OLD, PATH_EDIT_NEW),
+    ):
+        assert html.count(old) == 1, "wb_ui.html 结构已变化，布局补丁无法应用：%r" % old[:56]
+        html = html.replace(old, new, 1)
+    # 占位符是在上面的替换里插进来的，所以这里才展开成图标 + tooltip
+    for token, (tip_id, tip) in TIPS.items():
+        assert html.count(token) == 1, "布局补丁占位符丢失：%s" % token
+        html = html.replace(token, HELP_DOT.format(tip_id=tip_id, tip=tip), 1)
+    return html
+
+
 def transform(code, kind):
     constants = []
     for item in code.co_consts:
@@ -145,17 +326,20 @@ def transform(code, kind):
     return code
 
 
-def wrap(code, installer, run_main=False):
-    if run_main:
+def wrap(code, installer, run_main=False, worker_source=None):
+    if run_main or worker_source is not None:
         code = code.replace(co_consts=tuple("__wb_before_repair__" if x == "__main__" else x for x in code.co_consts))
-    source = "import marshal as _repair_marshal\nexec(_repair_marshal.loads(%r), globals())\nfrom wb_fixes import %s as _repair_install\n_repair_install(globals())\n" % (marshal.dumps(code), installer)
+    source = "import marshal as _repair_marshal\nexec(_repair_marshal.loads(%r), globals())\n" % marshal.dumps(code)
+    if worker_source is not None:
+        return compile(source + worker_source, code.co_filename, "exec")
+    source += "from wb_fixes import %s as _repair_install\n_repair_install(globals())\n" % installer
     if run_main:
         source += "from wb_updates import install as _update_install\n_update_install(globals())\n"
         source += "if __name__ == '__main__':\n    main()\n"
     return compile(source, code.co_filename, "exec")
 
 
-def rebuild_pyz(data):
+def rebuild_pyz(data, build_dir=BUILD):
     old_toc = list(marshal.loads(data[struct.unpack("!I", data[8:12])[0]:]))
     output, toc = bytearray(data[:17]), []
     changed = []
@@ -167,7 +351,7 @@ def rebuild_pyz(data):
             if name == "wb_core":
                 code = wrap(code, "install_core")
             raw = marshal.dumps(code)
-            (BUILD / (name + ".bin")).write_bytes(raw)
+            (build_dir / (name + ".bin")).write_bytes(raw)
             payload = zlib.compress(raw, 6)
             changed.append(name)
         toc.append((name, (kind, len(output), len(payload))))
@@ -194,24 +378,24 @@ def rebuild_pyz(data):
     return bytes(output), changed + ["wb_fixes (added)", "wb_updates (added)", "wb_skills (added)"]
 
 
-def main():
+def main(build_dir=BUILD, release_dir=RELEASE, worker_source=None):
     assert sys.version_info[:2] == (3, 9), "Use Python 3.9 to match the original EXE"
     original = next(ROOT.glob("*.exe"))
     data = original.read_bytes()
     assert hashlib.sha256(data).hexdigest() == ORIGINAL_HASH, "Original EXE changed; do not apply offset patches"
-    BUILD.mkdir(exist_ok=True)
-    RELEASE.mkdir(exist_ok=True)
+    build_dir.mkdir(exist_ok=True)
+    release_dir.mkdir(exist_ok=True)
     start, version, library, entries = archive(data)
     output, toc, changes = bytearray(data[:start]), [], []
     for entry in entries:
         payload = entry["payload"]
         if entry["name"] == "PYZ.pyz":
-            raw, modules = rebuild_pyz(unpack(entry))
+            raw, modules = rebuild_pyz(unpack(entry), build_dir)
         elif entry["name"] == "wb_web":
             code = transform(marshal.loads(unpack(entry)), "web")
-            (BUILD / "wb_web_patched.bin").write_bytes(marshal.dumps(code))
-            raw = marshal.dumps(wrap(code, "install_web", run_main=True))
-            (BUILD / "wb_web.bin").write_bytes(raw)
+            (build_dir / "wb_web_patched.bin").write_bytes(marshal.dumps(code))
+            raw = marshal.dumps(wrap(code, "install_web", run_main=True, worker_source=worker_source))
+            (build_dir / "wb_web.bin").write_bytes(raw)
         elif entry["name"] == "wb_ui.html":
             html = unpack(entry).decode("utf-8")
             html = html.replace('flex:1;overflow:auto;padding:10px 16px 14px;', 'flex:1;min-height:0;contain:size;overflow:auto;padding:10px 16px 14px;', 1)
@@ -225,9 +409,13 @@ def main():
             html = html.replace('<div id="dest-row"></div>', '<div id="skills-src"></div><div id="dest-row"></div>', 1)
             html = html.replace('<div id="pkg-row"></div>', '<div id="pkg-row"></div><div id="skills-dst"></div>', 1)
             html = html.replace("补登记会话、搬产物本体、改写路径、补装技能。补缺与更新，执行前自动备份。", "补登记会话、更新源机较新的已有会话、搬产物本体、改写路径、补装技能。替换前自动备份。")
+            html = guard_version_requests(fix_accounts_ui(html))
+            html = fix_layout(html)
             html = html.replace('<div class="wxwrap" id="wxwrap">', '<div class="header-actions"><button class="update-button" id="update-button" hidden onclick="checkUpdate(true)">更新</button><div class="wxwrap" id="wxwrap">', 1)
             html = html.replace('</header>', '</div></header>', 1)
             html = html.replace('</body>', (HERE / "update_ui.html").read_text(encoding="utf-8") + '\n</body>', 1)
+            html = html.replace('</body>', (HERE / "layout_ui.html").read_text(encoding="utf-8") + '\n</body>', 1)
+            html = html.replace('</body>', (HERE / "version_ui.html").read_text(encoding="utf-8") + '\n</body>', 1)
             html = html.replace('</body>', (HERE / "skills_ui.html").read_text(encoding="utf-8") + '\n</body>', 1)
             raw = html.encode("utf-8")
         else:
@@ -244,12 +432,12 @@ def main():
     toc_data = b"".join(toc)
     output.extend(toc_data)
     output.extend(struct.pack("!8sIIII64s", MAGIC, len(output) - start + 88, toc_offset, len(toc_data), version, library))
-    target = RELEASE / (original.stem + "_修复版.exe")
+    target = release_dir / (original.stem + "_修复版.exe" if worker_source is None else "migration-worker.exe")
     target.write_bytes(output)
-    report = {"original_sha256": ORIGINAL_HASH, "repaired_sha256": hashlib.sha256(output).hexdigest(), "changed_archive_entries": changes, "changed_pyz_modules": modules, "bootloader_unchanged": bytes(output[:start]) == data[:start], "output": str(target)}
-    (BUILD / "build_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    report = {"original_sha256": ORIGINAL_HASH, "repaired_sha256": hashlib.sha256(output).hexdigest(), "changed_archive_entries": changes, "changed_pyz_modules": modules, "bootloader_unchanged": bytes(output[:start]) == data[:start], "output": target.relative_to(ROOT).as_posix()}
+    (build_dir / "build_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    return report
 
 
 if __name__ == "__main__":
-    main()
+    print(json.dumps(main(), ensure_ascii=False, indent=2))

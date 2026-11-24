@@ -1,79 +1,191 @@
 <style>
 #v-src .panel,#v-dst .panel,#v-src .pcol>.card:last-child,#v-dst .pcol>.card:last-child{min-height:min-content}
-.skills-box{margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
-.skills-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-.skills-box select,.skills-box input[type=search]{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--r-sm);padding:6px 8px;max-width:100%}
-.skills-box input[type=search]{flex:1;min-width:100px}
-.skills-list{max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}
+/* 「携带技能」是独立的垂直字段（.prow.vfield）：标签在上、下拉在下、摘要在下方。
+   这里只保留选中摘要、技能迁入列表与选择弹窗的样式。 */
+.skills-summary{font-size:12px;color:var(--muted);margin:0;line-height:1.6;overflow-wrap:anywhere}
+#skills-src [hidden]{display:none!important}
+
+/* 现机：技能迁入冲突列表 */
+.skills-list{max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);margin-top:8px}
 .skill-item{display:flex;gap:10px;align-items:center;padding:9px 10px;border-bottom:1px solid var(--border)}
 .skill-item:last-child{border-bottom:0}
 .skill-item input{accent-color:var(--success);flex:none}
 .skill-text{flex:1;min-width:0;overflow-wrap:anywhere}
 .skill-text small{display:block;color:var(--muted);font-size:12px;line-height:1.4;margin-top:2px}
 .skill-size{font-size:12px;color:var(--muted);white-space:nowrap}
-.skills-summary{font-size:12px;color:var(--fg-soft);margin:8px 0}
-.skills-box [hidden]{display:none!important}
-</style>
-<script id="skills-script">
-var SK={mode:PK.mode==="all"?"all":"none",touched:false,cache:null,items:[],picked:{},ready:false,error:"",q:"",actions:{},dstScope:"",dstItems:[]};
-$("skills-src").innerHTML='<div class="skills-box"><div class="skills-toolbar"><b>携带技能</b>'+
-  '<select id="skill-mode" onchange="skillModeChanged(this.value)" aria-label="技能打包方式">'+
-  '<option value="none">不携带技能</option><option value="all">携带全部技能</option><option value="custom">自定义技能</option></select></div>'+
-  '<div id="skill-options" hidden><div class="skills-toolbar">'+
-  '<input type="search" id="skill-search" placeholder="搜索技能名称或简介" aria-label="搜索技能" oninput="SK.q=this.value;renderSourceSkills()">'+
-  '<button class="btn btn-ghost sm" id="skill-all" onclick="skillSetAll(true)">全选</button>'+
-  '<button class="btn btn-ghost sm" id="skill-clear" onclick="skillSetAll(false)">清空</button>'+
-  '<button class="btn btn-ghost sm" onclick="loadSkills()">刷新</button></div><div id="skill-list" class="skills-list"></div></div>'+
-  '<div id="skill-summary" class="skills-summary"></div></div>';
+.skills-dst-note{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6}
 
-function skillContext(){return $("pkg-v").textContent.trim()+"\n"+(S?S.cache:"")+"\n"+TG.uid}
+/* 技能选择弹窗（复用账号弹窗的 .pickdlg 外观） */
+#skill-mask{position:fixed;inset:0;background:rgba(42,38,33,.45);z-index:55;display:none;align-items:center;justify-content:center}
+#skill-mask.on{display:flex}
+#skill-mask .pickdlg{height:600px}
+.skl-search{flex:1;min-width:140px;font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--r-sm);padding:6px 10px}
+.skl-list{flex:1;min-height:0;overflow:auto;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-alt);padding:6px}
+.skl-item{display:flex;gap:10px;align-items:center;padding:8px 10px;margin-bottom:6px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);cursor:pointer;transition:var(--transition)}
+.skl-item:last-child{margin-bottom:0}
+.skl-item:hover{border-color:var(--border-strong)}
+.skl-item.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.skl-item.off{opacity:.55}
+.skl-item input{accent-color:var(--accent);flex:none}
+.skl-item .ib{flex:1;min-width:0}
+.skl-item .tt{display:block;font-size:13px;font-weight:600;color:var(--fg);word-break:break-all;line-height:1.5}
+.skl-item .mt{display:block;font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.45;overflow-wrap:anywhere}
+.skl-item .sz{flex:none;font:11.5px var(--font-mono);color:var(--fg-soft)}
+</style>
+<div id="skill-mask">
+  <div class="pickdlg">
+    <div class="pickdlg-h"><h4>选择要携带的技能</h4>
+      <button class="x" onclick="closeSkillPicker()">✕</button></div>
+    <div class="pickdlg-b">
+      <div class="skills-toolbar ptoolbar">
+        <input type="search" id="skill-search" class="skl-search" placeholder="搜索技能名称或简介"
+               aria-label="搜索技能" oninput="SK.q=this.value;renderSkillPicker()">
+        <button class="btn btn-ghost sm" onclick="skillPickAll(true)">全选</button>
+        <button class="btn btn-ghost sm" onclick="skillPickAll(false)">清空</button>
+        <button class="btn btn-ghost sm" onclick="loadSkills()">刷新</button>
+      </div>
+      <div id="skill-list" class="skl-list"></div>
+    </div>
+    <div class="pickdlg-f">
+      <span class="sum" id="skill-sum"></span>
+      <button class="btn btn-ghost" onclick="closeSkillPicker()">取消</button>
+      <button class="btn btn-dark" onclick="confirmSkillPicker()">确定</button>
+    </div>
+  </div>
+</div>
+<script id="skills-script">
+var SK={mode:PK.mode==="all"?"all":"none",touched:false,cache:null,items:[],picked:{},draft:null,open:false,ready:false,error:"",q:"",actions:{},dstScope:"",dstItems:[]};
+/* 垂直字段：标签在上、下拉 + 入口按钮在下，摘要写在下方。 */
+$("skills-src").innerHTML='<span class="plabel">携带技能</span>'+
+  '<div class="prow-inner">'+
+  '<select id="skill-mode" onchange="skillModeChanged(this.value)" aria-label="技能打包方式">'+
+  '<option value="none">不携带技能</option><option value="all">携带全部技能</option><option value="custom">自定义技能</option></select>'+
+  '<button class="btn btn-ghost sm" id="skill-pick-btn" hidden onclick="openSkillPicker()">选技能</button></div>'+
+  '<div id="skill-summary" class="skills-summary"></div>';
+
+function skillUsable(){return SK.items.filter(function(x){return !x.error})}
+function skillChosen(){
+  var usable=skillUsable();
+  return SK.mode==="all"?usable:usable.filter(function(x){return SK.picked[x.name]});
+}
+function skillContext(){
+  // 目标指纹必须覆盖所有会影响「技能迁到哪里」的路径：迁移包、缓存根、
+  // 工作空间根、目标账号。少算 S.ws 时只改工作空间路径会沿用旧的 check 结果，
+  // 技能按错误目标导入。
+  return $("pkg-v").textContent.trim()+"\n"+(S?S.cache:"")+"\n"+(S?S.ws:"")+"\n"+TG.uid
+}
+
+/* 面板只显示一行摘要；“携带全部技能”不展开列表，自定义模式走弹窗 */
 function renderSourceSkills(){
   $("skill-mode").value=SK.mode;
-  $("skill-options").hidden=SK.mode==="none";
-  $("skill-all").hidden=$("skill-clear").hidden=SK.mode!=="custom";
-  var usable=SK.items.filter(function(x){return !x.error});
-  var selected=SK.mode==="all"?usable:usable.filter(function(x){return SK.picked[x.name]});
+  $("skill-pick-btn").hidden=SK.mode!=="custom";
+  var usable=skillUsable(),chosen=skillChosen();
+  var size=chosen.reduce(function(n,x){return n+x.bytes},0);
   var unavailable=SK.items.length-usable.length;
-  var size=selected.reduce(function(n,x){return n+x.bytes},0);
-  $("skill-summary").textContent=SK.mode==="none"?"不携带技能。继续执行依赖技能的任务时，需在新电脑另行安装。":
-    (!SK.ready?(SK.error?"无法读取技能列表，请查看上方提示。":"正在读取技能列表…"):"已选 "+selected.length+" / "+usable.length+" 个技能 · "+hsize(size)+
-      (unavailable?"；"+unavailable+" 个不可用技能已跳过":""));
-  if(!SK.ready){$("skill-list").innerHTML='<div class="skill-item">'+esc(SK.error||"正在读取技能列表…")+'</div>';return}
-  var visible=SK.items.filter(function(x){return (x.name+" "+x.description).toLowerCase().indexOf(SK.q.toLowerCase())!==-1});
-  $("skill-list").innerHTML=visible.map(function(x){
-    return '<label class="skill-item"><input type="checkbox" data-skill="'+esc(x.name)+'" '+
-      (!x.error&&(SK.mode==="all"||SK.picked[x.name])?'checked ':'')+(SK.mode!=="custom"||x.error?'disabled ':'')+'>'+
-      '<span class="skill-text">'+esc(x.name)+'<small>'+esc(x.error||x.description||"未填写简介")+'</small></span>'+
-      '<span class="skill-size">'+(x.error?"不可用":hsize(x.bytes))+'</span></label>';
-  }).join('')||'<div class="skill-item">'+(SK.items.length?"没有匹配的技能":"当前目录没有技能")+'</div>';
+  var text;
+  if(SK.mode==="none")text="不携带技能。继续执行依赖技能的任务时，需在新电脑另行安装。";
+  else if(!SK.ready)text=SK.error?"无法读取技能列表："+SK.error:"正在读取技能列表…";
+  else if(SK.mode==="all")text="携带全部技能："+usable.length+" 个 · "+hsize(size)+(unavailable?"；"+unavailable+" 个不可用技能已跳过":"");
+  else text="已选 "+chosen.length+" / "+usable.length+" 个技能 · "+hsize(size)+(unavailable?"；"+unavailable+" 个不可用技能已跳过":"");
+  $("skill-summary").textContent=text;
+  /* 按钮文案保持定长，已选数量交给下方摘要，避免把下拉框挤窄 */
+  if(SK.mode==="custom")$("skill-pick-btn").textContent="选技能";
+  if(SK.open)renderSkillPicker();
+  if(typeof autoShotStep==="function")autoShotStep();
 }
-$("skill-list").onchange=function(e){if(e.target.dataset.skill)skillToggle(e.target.dataset.skill,e.target.checked)};
-function skillToggle(name,on){if(busyOn||!SK.items.some(function(x){return x.name===name&&!x.error}))return;SK.picked[name]=on;renderSourceSkills()}
-function skillSetAll(on){if(busyOn)return;SK.items.forEach(function(x){SK.picked[x.name]=on&&!x.error});renderSourceSkills()}
+
+function skillVisible(){
+  var q=(SK.q||"").toLowerCase();
+  return SK.items.filter(function(x){return (x.name+" "+(x.description||"")).toLowerCase().indexOf(q)!==-1});
+}
+function openSkillPicker(){
+  if(busyOn)return;
+  SK.draft={};
+  skillChosen().forEach(function(x){SK.draft[x.name]=true});
+  SK.open=true;SK.q="";
+  if($("skill-search"))$("skill-search").value="";
+  $("skill-mask").classList.add("on");
+  if(!SK.ready)loadSkills();
+  renderSkillPicker();
+}
+function closeSkillPicker(){
+  SK.open=false;SK.draft=null;SK.q="";
+  $("skill-mask").classList.remove("on");
+  renderSourceSkills();
+}
+function resetVersionSkills(){
+  SK.cache=null;SK.items=[];SK.picked={};SK.ready=false;SK.error="";
+  SK.dstScope="";SK.actions={};SK.dstItems=[];
+  $("skills-dst").textContent="";
+  closeSkillPicker();
+}
+function confirmSkillPicker(){
+  var picked={};
+  skillUsable().forEach(function(x){if(SK.draft&&SK.draft[x.name])picked[x.name]=true});
+  SK.picked=picked;SK.touched=true;
+  closeSkillPicker();
+}
+function renderSkillPicker(){
+  if(!SK.open)return;
+  var list=$("skill-list");if(!list)return;
+  var sum=$("skill-sum");
+  if(!SK.ready){
+    list.innerHTML='<div class="empty">'+esc(SK.error||"正在读取技能列表…")+'</div>';
+    sum.textContent="";
+    return;
+  }
+  var visible=skillVisible();
+  list.innerHTML=visible.map(function(x){
+    var on=!!(SK.draft&&SK.draft[x.name]);
+    return '<label class="skl-item'+(on?" on":"")+(x.error?" off":"")+'"><input type="checkbox" data-skill="'+esc(x.name)+'" '+
+      (on?"checked ":"")+(x.error?"disabled ":"")+'>'+
+      '<span class="ib"><span class="tt">'+esc(x.name)+'</span>'+
+      '<span class="mt">'+esc(x.error||x.description||"未填写简介")+'</span></span>'+
+      '<span class="sz">'+(x.error?"不可用":hsize(x.bytes))+'</span></label>';
+  }).join('')||'<div class="empty">'+(SK.items.length?"没有匹配的技能":"当前目录没有技能")+'</div>';
+  var usable=skillUsable();
+  var n=usable.filter(function(x){return SK.draft&&SK.draft[x.name]}).length;
+  sum.textContent="已选 "+n+" / "+usable.length+" 个 · "+hsize(usable.filter(function(x){return SK.draft&&SK.draft[x.name]}).reduce(function(a,x){return a+x.bytes},0));
+}
+function skillPickToggle(name,on){if(busyOn||!SK.draft)return;SK.draft[name]=on;renderSkillPicker()}
+function skillPickAll(on){
+  if(busyOn||!SK.draft)return;
+  skillVisible().forEach(function(x){if(!x.error)SK.draft[x.name]=on});
+  renderSkillPicker();
+}
+if($("skill-list"))$("skill-list").onchange=function(e){
+  if(e.target.dataset.skill)skillPickToggle(e.target.dataset.skill,e.target.checked);
+};
+if(typeof document!=="undefined"&&document.addEventListener)document.addEventListener("keydown",function(e){
+  if(SK.open&&(e.key==="Escape"||e.keyCode===27))closeSkillPicker();
+});
+
 function skillModeChanged(mode){
   if(busyOn)return;
   SK.mode=mode;SK.touched=true;
+  if(SK.open)closeSkillPicker();
   if(mode!=="none"&&(!SK.ready||SK.cache!==(S&&S.cache)))loadSkills();
   renderSourceSkills();
 }
 function loadSkills(){
-  var cache=S&&S.cache;
+  var cache=S&&S.cache,source=PK;
   if(SK.cache!==cache){SK.picked={};SK.items=[];SK.cache=cache}
   SK.ready=false;SK.error="";renderSourceSkills();
   return api("skills",{}).then(function(r){
-    if(SK.cache!==cache)return;
+    if(SK.cache!==cache||PK!==source)return;
     SK.ready=!!r.ok;SK.error=r.ok?"":(r.text||"读取技能失败，请刷新重试");SK.items=r.ok?(r.skills||[]):[];
     var names=SK.items.map(function(x){return x.name});
     Object.keys(SK.picked).forEach(function(name){if(names.indexOf(name)===-1)delete SK.picked[name]});
     renderSourceSkills();
-  }).catch(function(){if(SK.cache===cache){SK.error="读取技能失败，请刷新重试";renderSourceSkills()}});
+  }).catch(function(){if(SK.cache===cache&&PK===source){SK.error="读取技能失败，请刷新重试";renderSourceSkills()}});
 }
 function renderSkillConflicts(){
-  if(!SK.dstItems.length){$("skills-dst").innerHTML='<div class="skills-box skills-summary">迁移包未携带技能。</div>';return}
+  if(!SK.dstItems.length){$("skills-dst").innerHTML='<div class="skills-dst-note">迁移包未携带技能。</div>';return}
   var conflicts=SK.dstItems.filter(function(x){return x.status==="conflict"});
-  $("skills-dst").innerHTML='<div class="skills-box"><div class="skills-toolbar"><b>技能迁入</b>'+
-    (conflicts.length?'<button class="btn btn-ghost sm" onclick="skillSetAllActions(\'skip\')">全部跳过</button><button class="btn btn-ghost sm" onclick="skillSetAllActions(\'overwrite\')">全部覆盖</button>':'')+
-    '</div><div class="skills-summary">新增技能直接导入；相同内容自动跳过。同名冲突默认跳过，覆盖前备份本机技能并完整替换。</div><div class="skills-list">'+
+  $("skills-dst").innerHTML='<div class="skills-dst-note"><b>技能迁入</b>'+
+    (conflicts.length?' · <button class="btn btn-ghost sm" onclick="skillSetAllActions(\'skip\')">全部跳过</button><button class="btn btn-ghost sm" onclick="skillSetAllActions(\'overwrite\')">全部覆盖</button>':'')+
+    '<br>新增技能直接导入；相同内容自动跳过。同名冲突默认跳过，覆盖前备份本机技能并完整替换。</div><div class="skills-list">'+
     SK.dstItems.map(function(x){
       var choice=x.status==="unavailable"?'<span class="skill-size">不可用，跳过</span>':x.status==="conflict"?'<select data-skill="'+esc(x.name)+'" aria-label="'+esc(x.name)+' 处理方式">'+
         '<option value="skip" '+(SK.actions[x.name]!=="overwrite"?'selected':'')+'>跳过，保留本机</option>'+
@@ -81,7 +193,7 @@ function renderSkillConflicts(){
         '<span class="skill-size">'+(x.status==="same"?"内容相同，跳过":"新增，直接导入")+'</span>';
       return '<div class="skill-item"><span class="skill-text">'+esc(x.name)+'<small>'+(x.error?esc(x.error):'迁移包 '+hsize(x.bytes)+
         (x.status!=="new"?' · 本机 '+hsize(x.local_bytes):''))+'</small></span>'+choice+'</div>';
-    }).join('')+'</div></div>';
+    }).join('')+'</div>';
   $("skills-dst").onchange=function(e){if(e.target.dataset.skill)skillSetAction(e.target.dataset.skill,e.target.value)};
 }
 function skillSetAction(name,action){if(busyOn)return;SK.actions[name]=action;renderSkillConflicts()}
@@ -119,10 +231,36 @@ go=function(which){_skillsGo(which);if(which==="src"&&S&&(!SK.ready||SK.cache!==
 var _skillsChooseScope=chooseScope;
 chooseScope=function(mode){_skillsChooseScope(mode);if(!SK.touched){SK.mode=mode==="all"?"all":"none";renderSourceSkills()}};
 var _skillsRenderPaths=renderPaths;
-renderPaths=function(){_skillsRenderPaths();if(SK.cache!==null&&SK.cache!==(S&&S.cache)){SK.dstScope="";SK.actions={};loadSkills()}};
+renderPaths=function(){_skillsRenderPaths();if(SK.cache!==null&&SK.cache!==(S&&S.cache)){SK.dstScope="";SK.actions={};loadSkills()}if(typeof autoShotStep==="function")autoShotStep()};
 var _skillsApply=doApply;
 doApply=function(){if(busyOn)return;if(SK.dstScope!==skillContext()){doCheck();toast("检查后请确认技能处理方式，再执行迁移。");return}_skillsApply()};
 var _skillsBusy=busy;
-busy=function(on){_skillsBusy(on);["skills-src","skills-dst"].forEach(function(id){$(id).querySelectorAll("button,input,select").forEach(function(el){el.disabled=on||(el.type==="checkbox"&&(SK.mode!=="custom"||SK.items.some(function(x){return x.name===el.dataset.skill&&x.error})))})})};
+busy=function(on){_skillsBusy(on);["skills-src","skills-dst","skill-mask"].forEach(function(id){$(id).querySelectorAll("button,input,select").forEach(function(el){el.disabled=on||(el.type==="checkbox"&&(SK.mode!=="custom"||SK.items.some(function(x){return x.name===el.dataset.skill&&x.error})))})})};
+
+/* 自动化截图钩子，与主界面的 #src / #dst 同一套：
+   #src-skills-all=携带全部技能  #src-skills=自定义技能  #src-skills-dialog=自定义并打开弹窗 */
+var _autoShot=(function(){
+  if(typeof location==="undefined"||!location.hash)return null;
+  var h=location.hash.slice(1);
+  if(h!=="src-skills"&&h!=="src-skills-all"&&h!=="src-skills-dialog")return null;
+  return {mode:h==="src-skills-all"?"all":"custom",dialog:h==="src-skills-dialog",started:false,done:false};
+})();
+function autoShotStep(){
+  if(!_autoShot||_autoShot.done)return;
+  if(!_autoShot.started){
+    if(!S)return;
+    _autoShot.started=true;go("src");return;
+  }
+  if(!SK.ready)return;
+  _autoShot.done=true;
+  SK.mode=_autoShot.mode;SK.touched=true;
+  if(_autoShot.mode==="custom"){
+    /* 仅截图用：预选几个，让「已选 N 个」的摘要态与弹窗勾选态都能被拍到 */
+    SK.picked={};skillUsable().slice(0,3).forEach(function(x){SK.picked[x.name]=true});
+  }
+  renderSourceSkills();
+  if(_autoShot.dialog)openSkillPicker();
+}
 renderSourceSkills();
+autoShotStep();
 </script>

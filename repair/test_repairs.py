@@ -23,7 +23,7 @@ MODULE_DIR = ROOT / "audit" if ORIGINAL else ROOT / "repair" / "build"
 
 if not ORIGINAL:
     from build_repaired import archive, unpack
-    packed_exe = pathlib.Path(json.loads((MODULE_DIR / "build_report.json").read_text(encoding="utf-8"))["output"]).read_bytes()
+    packed_exe = (ROOT / json.loads((MODULE_DIR / "build_report.json").read_text(encoding="utf-8"))["output"]).read_bytes()
     _, _, _, entries = archive(packed_exe)
     entries = {entry["name"]: entry for entry in entries}
     pyz = unpack(entries["PYZ.pyz"])
@@ -274,6 +274,46 @@ class MigrationTests(unittest.TestCase):
         self.core["_copy_tree"](str(source), str(target))
         self.assertEqual((target / "file.txt").read_text(encoding="utf-8"), "BBBB")
 
+    def test_unknown_target_uid_is_rejected_not_silently_replaced(self):
+        pkg = self.pack(mode="all")
+        result = self.core["check_migrate"](pkg, self.env, target_uid="ghost-user-not-present")
+        self.assertFalse(result.get("ok"), "目标库里不存在的账号必须让检查失败")
+        self.assertIn("账号", result.get("text", ""))
+
+    def test_zero_session_account_from_snapshot_is_kept_as_target(self):
+        # 快照里有、会话表里没有的账号（零会话账号）应能作为合法目标，不被换掉
+        pkg = self.pack(mode="all")
+        # 快照是一个含 uid 字段的嵌套对象，account_profiles 会递归收集
+        write(self.dc / "account-snapshot.json",
+              json.dumps([{"uid": "zero-session-uid", "nickname": "零会话账号"}]))
+        result = self.core["check_migrate"](pkg, self.env, target_uid="zero-session-uid")
+        self.assertTrue(result.get("ok"), result)
+        self.assertEqual(str(result.get("target_uid")).lower(), "zero-session-uid")
+
+    def test_first_import_failure_rolls_back_without_half_written_data(self):
+        # 目标库里没有包内会话 → 走「首次迁入」分支（updates 为空），过去这里直接
+        # return 原函数，绕过事务/备份/回滚：写一半失败时会话已入库、正文半写且无备份。
+        pkg = self.pack(mode="all")
+        real_open = open
+
+        def fail_body(path, mode="r", *args, **kwargs):
+            if str(path) == str(self.target_body) and "w" in mode:
+                raise PermissionError("synthetic first-import body failure")
+            return real_open(path, mode, *args, **kwargs)
+
+        self.core["open"] = fail_body
+        try:
+            result = self.apply(pkg)
+        finally:
+            del self.core["open"]
+        self.assertFalse(result["ok"], result)
+        # 失败后目标库不应残留已登记的会话
+        with connect(self.dc / "workbuddy.db") as conn:
+            rows = conn.execute("SELECT id FROM sessions WHERE id LIKE 'session-%'").fetchall()
+        self.assertEqual(rows, [], "首次迁入失败后不应残留半写入的会话")
+        retried = self.apply(pkg)
+        self.assertTrue(retried["ok"], retried)
+
     def test_backup_error_aborts_before_updating_database_or_files(self):
         self.initial()
         self.change_source()
@@ -513,6 +553,50 @@ class BrowserTests(unittest.TestCase):
                     del os.environ["LOCALAPPDATA"]
                 else:
                     os.environ["LOCALAPPDATA"] = original
+
+
+class VersionProbeTests(unittest.TestCase):
+    """国内版/国际版目录探测：损坏库不能被当成候选选中。"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir=str(ROOT / "repair"))
+        self.addCleanup(self.temp.cleanup)
+        self.home = pathlib.Path(self.temp.name)
+        self.fixes = sys.modules["wb_fixes"]
+
+    def _db(self, root, good):
+        root.mkdir(parents=True, exist_ok=True)
+        path = root / "workbuddy.db"
+        if good:
+            with connect(path) as conn:
+                conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY)")
+        else:
+            path.write_bytes(b"this is not a sqlite database")  # 损坏库
+        return path
+
+    def test_corrupt_db_is_not_selected_over_valid_zero_session_db(self):
+        cn = self.home / ".workbuddy"
+        intl = self.home / ".workbuddy-ai"
+        cn_db = self._db(cn, good=True)          # 有效、零会话
+        intl_db = self._db(intl, good=False)     # 损坏
+        # 损坏库 mtime 更新，旧的排序会选中它
+        os.utime(intl_db, (cn_db.stat().st_mtime + 100, cn_db.stat().st_mtime + 100))
+        with mock.patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("WBMIG_PROFILE", None)
+            chosen = self.fixes.detect_cache_dir(str(self.home))
+        self.assertEqual(chosen, str(cn), "损坏的国际版库不应被选中")
+
+    def test_corrupt_preferred_profile_falls_back_to_valid_db(self):
+        cn = self.home / ".workbuddy"
+        intl = self.home / ".workbuddy-ai"
+        self._db(cn, good=True)
+        self._db(intl, good=False)
+        os.environ["WBMIG_PROFILE"] = "intl"
+        try:
+            chosen = self.fixes.detect_cache_dir(str(self.home))
+        finally:
+            os.environ.pop("WBMIG_PROFILE", None)
+        self.assertEqual(chosen, str(cn), "WBMIG_PROFILE 指向损坏库时应回退到有效库")
 
 
 if __name__ == "__main__":

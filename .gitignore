@@ -20,3 +20,4 @@ audit/*
 *.pem
 *.key
 wbmig-prefs.json
+wb-migrate.json

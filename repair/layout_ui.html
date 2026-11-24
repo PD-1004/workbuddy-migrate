@@ -1,0 +1,116 @@
+<style>
+/* ───────── 卡片标题行：标题靠左、版本切换靠右 ───────── */
+.cardhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.cardhead h3{flex:1 1 auto;min-width:0}
+.verhost{flex:none;display:flex;align-items:center}
+/* 标题 + 紧跟其后的帮助图标（不撑到右侧） */
+.cardhead .htitle{display:flex;align-items:center;gap:7px;flex:1 1 auto;min-width:0}
+.cardhead .htitle h3{flex:0 0 auto}
+
+/* 说明改成标题旁的小图标，悬停/聚焦时才展开，平时不占版面 */
+.helpwrap{position:relative;display:inline-flex;flex:none}
+.helpdot{
+  width:17px;height:17px;padding:0;border:1px solid var(--border-strong);border-radius:50%;
+  background:var(--surface-alt);color:var(--muted);cursor:help;
+  display:inline-flex;align-items:center;justify-content:center;
+  transition:var(--transition);
+}
+.helpdot:hover,.helpdot:focus-visible{color:var(--accent);border-color:var(--accent);background:var(--accent-soft);outline:none}
+.helpdot svg{display:block}
+.helptip{
+  position:absolute;top:calc(100% + 7px);left:-6px;z-index:70;width:264px;
+  background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--r-md);
+  box-shadow:0 14px 34px rgba(40,30,10,.18), 0 2px 6px rgba(40,30,10,.08);
+  padding:9px 12px;font-size:12px;line-height:1.65;color:var(--fg-soft);
+  opacity:0;visibility:hidden;transform:translateY(-3px);
+  transition:opacity .14s ease,transform .14s ease,visibility .14s;
+  pointer-events:none;
+}
+.helpwrap:hover .helptip,.helpwrap:focus-within .helptip{opacity:1;visibility:visible;transform:translateY(0)}
+.helptip b{color:var(--fg)}
+
+/* 版本切换：胶囊分段（紧凑版，不再带长句提示） */
+.verbar{display:flex;align-items:center;gap:7px}
+.verbar .vlabel{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.verseg{
+  display:inline-flex;align-items:center;gap:2px;padding:2px;
+  border:1px solid var(--border-strong);border-radius:999px;background:var(--surface-alt);
+}
+.verseg .vbtn{
+  font:inherit;font-size:12px;font-weight:600;line-height:1.4;
+  padding:3px 12px;border:0;border-radius:999px;background:none;
+  color:var(--fg-soft);cursor:pointer;white-space:nowrap;transition:var(--transition);
+}
+.verseg .vbtn:hover:not(.on):not(:disabled){background:var(--surface);color:var(--fg)}
+.verseg .vbtn.on{background:var(--accent);color:#fff}
+.verseg .vbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.verseg .vbtn:disabled{opacity:.55;cursor:not-allowed}
+
+/* ───────── 两个路径行：压缩高度 ───────── */
+.prow.pcompact{padding:7px 14px;margin-top:9px}
+.prow.pcompact .pcap{min-height:28px;padding:3px 11px}
+.prow.pcompact .plabel{width:130px}
+.prow.pcompact .pval{padding:1px 0}
+
+/* ───────── 垂直字段：标签在上、控件在下，控件撑满整行 ───────── */
+.prow.vfield{padding:9px 14px;margin-top:10px}
+.prow.vfield>.plabel{display:block;width:auto;margin-bottom:6px;font-size:12.5px}
+.prow.vfield .prow-inner{display:flex;align-items:center;gap:8px}
+.prow.vfield .seldrop{flex:1;min-width:0}
+.prow.vfield .seldrop .dropbtn{
+  width:100%;display:flex;align-items:center;justify-content:space-between;
+  text-align:left;padding:7px 11px;
+}
+
+/* ───────── 路径行与文件夹行：标签换行到控件上方，值做成只读框 ───────── */
+.prow.pcompact .prow-inner,
+#dest-row .prow .prow-inner,
+#pkg-row .prow .prow-inner{flex-wrap:wrap;gap:7px 9px}
+.prow.pcompact .plabel,
+#dest-row .plabel,
+#pkg-row .plabel{flex:0 0 100%;width:auto;margin:0}
+.prow.pcompact .pval,
+#dest-row .pval,
+#pkg-row .pval{
+  flex:1 1 240px;min-width:0;
+  background:var(--surface);border:1px solid var(--border-strong);
+  border-radius:var(--r-sm);padding:7px 11px;
+}
+.prow.pcompact .pcap{flex:none}
+
+/* 路径框高度贴近参考图：锁按钮与只读框等高 */
+.prow.pcompact{padding:9px 14px;margin-top:9px}
+.prow.pcompact .pcap{min-height:34px;padding:4px 12px}
+
+#skills-src select{
+  font:inherit;font-size:12.5px;font-weight:600;color:var(--fg);
+  background:var(--surface);border:1px solid var(--border-strong);
+  border-radius:var(--r-sm);padding:7px 11px;
+  flex:1;min-width:0;max-width:100%;
+  transition:border-color .15s,box-shadow .15s;
+}
+#skills-src select:hover{border-color:var(--accent)}
+#skills-src select:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+#skills-src #skill-pick-btn{flex:none;white-space:nowrap}
+#skills-src [hidden]{display:none!important}
+
+/* 技能摘要行：在下拉框下方、弱化显示 */
+.skills-summary{font-size:12px;color:var(--muted);margin:8px 0 0;line-height:1.6;overflow-wrap:anywhere}
+</style>
+<script id="layout-script">
+/* #pack-desc 原本既放「操作引导」又放「打包状态」，前者已收进标题旁的悬浮提示。
+   这里把纯引导语隐藏掉，只保留真正描述当前状态/需要用户注意的那几行。 */
+var _GUIDE_PREFIXES=["在「打包范围」里选","在上方「打包范围」下拉里选","打包登记本 + 全部会话正文"];
+var _layoutSyncPackBtn=typeof syncPackBtn==="function"?syncPackBtn:null;
+if(_layoutSyncPackBtn){
+  syncPackBtn=function(){
+    _layoutSyncPackBtn();
+    var d=$("pack-desc");
+    if(!d)return;
+    var t=(d.textContent||"").trim();
+    var guide=_GUIDE_PREFIXES.some(function(p){return t.indexOf(p)===0});
+    d.hidden=guide||!t;
+  };
+  if(typeof S!=="undefined"&&S)syncPackBtn();
+}
+</script>

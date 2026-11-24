@@ -1,5 +1,5 @@
 {
-  "version": "1.1.2",
-  "url": "https://github.com/PD-1004/workbuddy-session-migration-assistant/releases/tag/v1.1.2",
-  "notes": "运行日志改为容器内部滚动查看，日志增多不再撑高整个界面；程序运行时不再创建或写入 wbmig-log.txt，界面日志仍正常显示。下载 WorkBuddy-Migrate-Win-v1.1.2.exe 替换旧程序即可。"
+  "version": "1.1.3",
+  "url": "https://github.com/PD-1004/workbuddy-session-migration-assistant/releases/tag/v1.1.3",
+  "notes": "支持国际版 WorkBuddy：自动识别国内版 ~/.workbuddy 或国际版 ~/.workbuddy-ai，识别错了可在路径卡片标题右侧点「国内版 / 国际版」一键切换，切换后账号列表同步刷新；修好了新电脑上已登录但没聊过天的账号选不到、以及选了账号却被静默换成另一个账号的问题；「携带全部技能」不再铺开整份清单，「自定义技能」改用弹窗搜索勾选；卡片说明收进标题旁的悬浮提示，版面更紧凑。下载 WorkBuddy-Migrate-Win-v1.1.3.exe 替换旧程序即可。"
 }

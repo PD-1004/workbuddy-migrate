@@ -1,0 +1,77 @@
+<script id="version-script">
+/* 国内版 / 国际版：两条默认路径不同，自动识别错了用这里一键纠正。
+   走现有 /api/paths/save，不新增接口。
+   切换控件放在卡片标题行右侧（.cardhead 里的 #ver-host-<kind>），
+   不再压在说明文字下方、也不再用一整句提示语占位。 */
+var VER={
+  cn:{label:"国内版",cache:".workbuddy",ws:"WorkBuddy"},
+  intl:{label:"国际版",cache:".workbuddy-ai",ws:"WorkBuddy AI"}
+};
+function verCurrent(){
+  var p=String((S&&S.cache)||"").toLowerCase();
+  if(/[\\/]\.workbuddy-ai$/.test(p))return "intl";
+  if(/[\\/]\.workbuddy$/.test(p))return "cn";
+  return "";
+}
+function verBarHtml(){
+  var cur=verCurrent();
+  var btns=Object.keys(VER).map(function(k){
+    return '<button type="button" class="vbtn'+(k===cur?" on":"")+'" data-ver="'+k+'" '+
+      'aria-pressed="'+(k===cur?"true":"false")+'" '+
+      'onclick="switchVersion(\''+k+'\')">'+VER[k].label+'</button>';
+  }).join("");
+  return '<div class="verbar">'+
+    '<div class="verseg" role="group" aria-label="切换 WorkBuddy 版本（国内版 / 国际版）">'+btns+'</div></div>';
+}
+function verHome(){
+  var p=String((S&&(S.cache||S.ws))||"").replace(/[\\/]+$/,"");
+  var i=Math.max(p.lastIndexOf("\\"),p.lastIndexOf("/"));
+  return i>0?p.slice(0,i):"";
+}
+function switchVersion(key){
+  if(busyOn)return;
+  if(!VER[key])return;
+  if(verCurrent()===key){toast("当前已经是"+VER[key].label);return}
+  var home=verHome();
+  if(!home){toast("先把系统缓存目录填上，再切换版本",true);return}
+  var sep=(home.indexOf("/")!==-1&&home.indexOf("\\")===-1)?"/":"\\";
+  var cache=home+sep+VER[key].cache,ws=home+sep+VER[key].ws;
+  busy(true);
+  return api("paths/save",{cache:cache,ws:ws}).then(function(r){
+    if(!r.ok){
+      var where=r.field==="ws"?"默认工作空间存储路径":"系统缓存目录";
+      toast((r.msg||"切换失败")+(r.field?"（"+where+"）":""),true);
+      return;
+    }
+    S.cache=r.cache;S.ws=r.ws;
+    editing.src.cache=editing.src.ws=editing.dst.cache=editing.dst.ws=false;
+    // 新版本使用新的选择状态，旧请求返回时可以识别并丢弃结果。
+    PK={mode:PK.mode,step:1,loading:false,accounts:[],uid:"",sessions:[],picked:{},q:"",
+        allLoading:false,allItems:[],allTot:null};
+    TG={loading:false,accounts:[],uid:"",tmp:"",err:""};
+    if(MODAL.kind)closePick();
+    resetVersionSkills();
+    setSt("st-src","","");
+    setSt("st-dst","","");
+    renderTargets();
+    renderPaths();
+    loadTargets();
+    loadAccounts();
+    loadSkills();
+    toast("已切换为 "+VER[key].label+" 路径");
+    logLine("[配置] WorkBuddy 版本 → "+VER[key].label);
+    logLine("       系统缓存目录 → "+r.cache);
+    logLine("       工作空间路径 → "+r.ws);
+  }).catch(function(e){toast("切换失败："+e,true)}).finally(function(){busy(false)});
+}
+var _verRenderPaths=renderPaths;
+renderPaths=function(){
+  _verRenderPaths();
+  ["src","dst"].forEach(function(kind){
+    var host=$("ver-host-"+kind);
+    if(!host)return;
+    // 编辑态先收起切换控件，避免用户改路径时误触
+    host.innerHTML=(editing[kind].cache||editing[kind].ws)?"":verBarHtml();
+  });
+};
+</script>
